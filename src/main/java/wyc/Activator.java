@@ -7,6 +7,7 @@
 package wyc;
 
 import wycc.lang.Command;
+import wycc.lang.ConfigFile;
 import wycc.lang.Module;
 import wycc.util.Logger;
 import wyfs.lang.Content;
@@ -35,6 +36,8 @@ public class Activator implements Module.Activator {
 				e.associate(WyilFile.ContentType, null);
 			} else if (suffix.equals("wyal")) {
 				e.associate(WyalFile.ContentType, null);
+			} if (suffix.equals("toml")) {
+				e.associate(ConfigFile.ContentType, null);
 			}
 		}
 
@@ -64,7 +67,8 @@ public class Activator implements Module.Activator {
 		final Command[] commands = {
 				new Compile(registry, logger),
 				new Decompile(registry, logger),
-				new Run(registry, logger) };
+				new Run(registry, logger),
+				new Build(registry, logger)};
 		// Register all commands
 		for (Command c : commands) {
 			context.register(wycc.lang.Command.class, c);
