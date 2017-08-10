@@ -12,7 +12,7 @@ import java.util.Collections;
 import wybs.lang.Build;
 import wybs.lang.NameID;
 import wybs.util.StdProject;
-import wyc.util.AbstractProjectCommand;
+import wycc.util.AbstractProjectCommand;
 import wycc.util.Logger;
 import wyfs.lang.Content;
 import wyfs.lang.Path;

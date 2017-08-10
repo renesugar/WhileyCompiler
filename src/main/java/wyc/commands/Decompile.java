@@ -11,7 +11,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 
-import wyc.util.AbstractProjectCommand;
+import wycc.util.AbstractProjectCommand;
 import wycc.util.Logger;
 import wyfs.lang.Content;
 import wyil.io.WyilFilePrinter;

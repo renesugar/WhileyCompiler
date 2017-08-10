@@ -5,8 +5,8 @@ import java.io.IOException;
 import java.util.Map;
 
 import wybs.util.StdProject;
-import wyc.util.AbstractProjectCommand;
 import wycc.lang.ConfigFile;
+import wycc.util.AbstractProjectCommand;
 import wycc.util.Logger;
 import wyfs.lang.Content;
 import wyfs.lang.Path;
