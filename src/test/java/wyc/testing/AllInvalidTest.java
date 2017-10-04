@@ -76,6 +76,9 @@ public class AllInvalidTest {
 		IGNORED.put("Type_Invalid_11", "793");
 		// Infinite Array Types
 		IGNORED.put("Type_Invalid_10", "823");
+		//
+		IGNORED.put("StaticVar_Invalid_10", "830");
+		IGNORED.put("Type_Invalid_12", "830");
 		// ===============================================================
 		// Whiley Theorem Prover faults
 		// ===============================================================

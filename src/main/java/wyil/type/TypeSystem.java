@@ -19,6 +19,7 @@ import wybs.util.AbstractCompilationUnit.Name;
 import wyc.util.WhileyFileResolver;
 import wyil.type.SubtypeOperator.LifetimeRelation;
 import wyil.type.extractors.ReadableTypeExtractor;
+import wyil.type.extractors.RepresentationTypeExtractor;
 import wyil.type.extractors.WriteableTypeExtractor;
 import wyil.type.rewriters.AlgebraicTypeSimplifier;
 import wyil.type.subtyping.RelaxedSubtypeOperator;
@@ -63,6 +64,7 @@ public class TypeSystem {
 	private final SubtypeOperator coerciveSubtypeOperator;
 	private final TypeExtractor<Type,Object> readableTypeExtractor;
 	private final TypeExtractor<Type,Object> writeableTypeExtractor;
+	private final TypeExtractor<Type,Object> representationTypeExtractor;
 //	private final TypeInvariantExtractor typeInvariantExtractor;
 	private final TypeRewriter typeSimplifier;
 
@@ -72,6 +74,7 @@ public class TypeSystem {
 		this.coerciveSubtypeOperator = new RelaxedSubtypeOperator(this);
 		this.readableTypeExtractor = new ReadableTypeExtractor(resolver,this);
 		this.writeableTypeExtractor = new WriteableTypeExtractor(resolver,this);
+		this.representationTypeExtractor = new RepresentationTypeExtractor(resolver,this);
 //		this.typeInvariantExtractor = new TypeInvariantExtractor(resolver);
 		this.typeSimplifier = new AlgebraicTypeSimplifier();
 	}
@@ -373,6 +376,10 @@ public class TypeSystem {
 		} else {
 			return null;
 		}
+	}
+
+	public Type extractRepresentationType(Type type, LifetimeRelation lifetimes) throws ResolutionError {
+		return representationTypeExtractor.extract(type, lifetimes, null);
 	}
 
 	/**

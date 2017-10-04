@@ -13,12 +13,15 @@
 // limitations under the License.
 package wyil.type.extractors;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 
 import static wyc.lang.WhileyFile.Type;
 import static wyc.lang.WhileyFile.Decl;
 import wybs.lang.NameResolver;
 import wybs.lang.NameResolver.ResolutionError;
+import wybs.util.AbstractCompilationUnit.Identifier;
+import wybs.util.AbstractCompilationUnit.Tuple;
 import wycc.util.ArrayUtils;
 import wyil.type.SubtypeOperator.LifetimeRelation;
 import wyil.type.TypeExtractor;
@@ -266,11 +269,185 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 
 	protected abstract T construct(Type.Atom type);
 
+	/**
+	 * Union two canonical conjuncts together
+	 *
+	 * @param lhs
+	 * @param rhs
+	 * @return
+	 */
 	protected abstract T union(T lhs, T rhs);
 
+	/**
+	 * Intersect two positive atoms together
+	 * @param lhs
+	 * @param rhs
+	 * @return
+	 */
 	protected abstract T intersect(T lhs, T rhs);
 
+	/**
+	 * Subtract one position atom from another.
+	 *
+	 * @param lhs
+	 * @param rhs
+	 * @return
+	 */
 	protected abstract T subtract(T lhs, T rhs);
+
+	// ==========================================================
+	// Common record operators. These are included because they are reused, and yet
+	// are also quite complex.
+	// ==========================================================
+
+	protected Type.Record subtract(Type.Record lhs, Type.Record rhs) {
+		ArrayList<Decl.Variable> fields = new ArrayList<>();
+		Tuple<Decl.Variable> lhsFields = lhs.getFields();
+		Tuple<Decl.Variable> rhsFields = rhs.getFields();
+		for (int i = 0; i != lhsFields.size(); ++i) {
+			for (int j = 0; j != rhsFields.size(); ++j) {
+				Decl.Variable lhsField = lhsFields.get(i);
+				Decl.Variable rhsField = rhsFields.get(j);
+				Identifier lhsFieldName = lhsField.getName();
+				Identifier rhsFieldName = rhsField.getName();
+				if (lhsFieldName.equals(rhsFieldName)) {
+					// FIXME: could potentially do better here
+					Type negatedRhsType = new Type.Negation(rhsField.getType());
+					Type type = intersectionHelper(lhsField.getType(), negatedRhsType);
+					fields.add(new Decl.Variable(new Tuple<>(), lhsFieldName, type));
+					break;
+				}
+			}
+		}
+		if(fields.size() != lhsFields.size()) {
+			// FIXME: need to handle the case of open records here.
+			return lhs;
+		} else {
+			return new Type.Record(lhs.isOpen(), new Tuple<>(fields));
+		}
+	}
+
+	protected Type.Record intersect(Type.Record lhs, Type.Record rhs) {
+		//
+		Tuple<Decl.Variable> lhsFields = lhs.getFields();
+		Tuple<Decl.Variable> rhsFields = rhs.getFields();
+		// Determine the number of matching fields. That is, fields with the
+		// same name.
+		int matches = countMatchingFields(lhsFields, rhsFields);
+		// When intersecting two records, the number of fields is only
+		// allowed to differ if one of them is an open record. Therefore, we
+		// need to pay careful attention to the size of the resulting match
+		// in comparison with the original records.
+		if (matches < lhsFields.size() && !rhs.isOpen()) {
+			// Not enough matches made to meet the requirements of the lhs
+			// type.
+			return null;
+		} else if (matches < rhsFields.size() && !lhs.isOpen()) {
+			// Not enough matches made to meet the requirements of the rhs
+			// type.
+			return null;
+		} else {
+			// At this point, we know the intersection succeeds. The next
+			// job is to determine the final set of field declarations.
+			int lhsRemainder = lhsFields.size() - matches;
+			int rhsRemainder = rhsFields.size() - matches;
+			Decl.Variable[] fields = new Decl.Variable[matches + lhsRemainder + rhsRemainder];
+			// Extract all matching fields first
+			int index = extractMatchingFields(lhsFields, rhsFields, fields);
+			// Extract remaining lhs fields second
+			index = extractNonMatchingFields(lhsFields, rhsFields, fields, index);
+			// Extract remaining rhs fields last
+			index = extractNonMatchingFields(rhsFields, lhsFields, fields, index);
+			// The intersection of two records can only be open when both
+			// are themselves open.
+			boolean isOpen = lhs.isOpen() && rhs.isOpen();
+			//
+			return new Type.Record(isOpen, new Tuple<>(fields));
+		}
+	}
+
+	/**
+	 * Count the number of matching fields. That is, fields with the same name.
+	 *
+	 * @param lhsFields
+	 * @param rhsFields
+	 * @return
+	 */
+	protected int countMatchingFields(Tuple<Decl.Variable> lhsFields, Tuple<Decl.Variable> rhsFields) {
+		int count = 0;
+		for (int i = 0; i != lhsFields.size(); ++i) {
+			for (int j = 0; j != rhsFields.size(); ++j) {
+				Decl.Variable lhsField = lhsFields.get(i);
+				Decl.Variable rhsField = rhsFields.get(j);
+				Identifier lhsFieldName = lhsField.getName();
+				Identifier rhsFieldName = rhsField.getName();
+				if (lhsFieldName.equals(rhsFieldName)) {
+					count = count + 1;
+				}
+			}
+		}
+		return count;
+	}
+
+	/**
+	 * Extract all matching fields (i.e. fields with the same name) into the
+	 * result array.
+	 *
+	 * @param lhsFields
+	 * @param rhsFields
+	 * @param result
+	 * @return
+	 */
+	protected int extractMatchingFields(Tuple<Decl.Variable> lhsFields, Tuple<Decl.Variable> rhsFields,
+			Decl.Variable[] result) {
+		int index = 0;
+		// Extract all matching fields first.
+		for (int i = 0; i != lhsFields.size(); ++i) {
+			for (int j = 0; j != rhsFields.size(); ++j) {
+				Decl.Variable lhsField = lhsFields.get(i);
+				Decl.Variable rhsField = rhsFields.get(j);
+				Identifier lhsFieldName = lhsField.getName();
+				Identifier rhsFieldName = rhsField.getName();
+				if (lhsFieldName.equals(rhsFieldName)) {
+					Type type = intersectionHelper(lhsField.getType(), rhsField.getType());
+					Decl.Variable combined = new Decl.Variable(new Tuple<>(), lhsFieldName, type);
+					result[index++] = combined;
+				}
+			}
+		}
+		return index;
+	}
+
+	/**
+	 * Extract fields from lhs which do not match any field in the rhs. That is,
+	 * there is no field in the rhs with the same name.
+	 *
+	 * @param lhsFields
+	 * @param rhsFields
+	 * @param result
+	 * @param index
+	 * @return
+	 */
+	protected int extractNonMatchingFields(Tuple<Decl.Variable> lhsFields, Tuple<Decl.Variable> rhsFields,
+			Decl.Variable[] result, int index) {
+		outer: for (int i = 0; i != lhsFields.size(); ++i) {
+			for (int j = 0; j != rhsFields.size(); ++j) {
+				Decl.Variable lhsField = lhsFields.get(i);
+				Decl.Variable rhsField = rhsFields.get(j);
+				Identifier lhsFieldName = lhsField.getName();
+				Identifier rhsFieldName = rhsField.getName();
+				if (lhsFieldName.equals(rhsFieldName)) {
+					// This is a matching field. Therefore, continue on to the
+					// next lhs field
+					continue outer;
+				}
+			}
+			result[index++] = lhsFields.get(i);
+		}
+		return index;
+	}
+
+	// ==========================================================
 
 	/**
 	 * Provides a simplistic form of type union which, in some cases, does

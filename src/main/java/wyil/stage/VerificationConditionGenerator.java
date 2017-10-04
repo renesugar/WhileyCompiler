@@ -40,7 +40,6 @@ import wyil.type.TypeSystem;
 import wyc.lang.WhileyFile;
 import wyc.task.Wyil2WyalBuilder;
 import wyc.util.AbstractConsumer;
-import wyc.util.AbstractVisitor;
 
 import static wyc.lang.WhileyFile.*;
 
