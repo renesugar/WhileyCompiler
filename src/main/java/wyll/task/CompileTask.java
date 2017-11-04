@@ -86,6 +86,7 @@ public class CompileTask {
 			translateStaticVariable((Decl.StaticVariable) decl, context);
 			break;
 		case DECL_type:
+		case DECL_rectype:
 			translateType((Decl.Type) decl, context);
 			break;
 		case DECL_function:
@@ -436,12 +437,12 @@ public class CompileTask {
 				// Harder case for multiple assignments. First, store return value into
 				// temporary register. Then load from that. At this time, the only way to have a
 				// multiple return is via some kind of invocation.
+				WyllFile.Type.Record rec_t = (WyllFile.Type.Record) decl.getType();
 				for (int k = 0; k != rhsTypes.size(); ++k) {
 					Expr lv = lhs.get(j++);
 					WyllFile.LVal lval = (WyllFile.LVal) translateExpression(lv, null, context);
 					WyllFile.Expr.VariableAccess tmp = new WyllFile.Expr.VariableAccess(decl.getType(), decl.getName());
-					WyllFile.Type rhsType = translateType(rhsTypes.get(k));
-					WyllFile.Expr rval = new WyllFile.Expr.RecordAccess(rhsType, tmp, new Identifier("f" + k));
+					WyllFile.Expr rval = new WyllFile.Expr.RecordAccess(rec_t, tmp, new Identifier("f" + k));
 					stmts.add(new WyllFile.Stmt.Assign(lval, rval));
 				}
 			}
@@ -820,7 +821,7 @@ public class CompileTask {
 	}
 
 	public WyllFile.Expr translateArrayAccess(Expr.ArrayAccess expr, Type target, Context context) {
-		WyllFile.Type type = translateType(expr.getType());
+		WyllFile.Type.Array type = (WyllFile.Type.Array) translateType(expr.getFirstOperand().getType());
 		WyllFile.Expr src = translateExpression(expr.getFirstOperand(), null, context);
 		// FIXME: this should be a USIZE
 		WyllFile.Expr idx = translateExpression(expr.getSecondOperand(), Type.Int, context);
@@ -832,13 +833,13 @@ public class CompileTask {
 	}
 
 	public WyllFile.Expr translateArrayLength(Expr.ArrayLength expr, Type.Int target, Context context) {
-		WyllFile.Type type = translateType(expr.getType());
+		WyllFile.Type.Array type = (WyllFile.Type.Array) translateType(expr.getOperand().getType());
 		WyllFile.Expr src = translateExpression(expr.getOperand(), null, context);
 		return new WyllFile.Expr.ArrayLength(type, src);
 	}
 
 	public WyllFile.Expr translateArrayGenerator(Expr.ArrayGenerator expr, Type.Array target, Context context) {
-		WyllFile.Type type = translateType(expr.getType());
+		WyllFile.Type.Array type = (WyllFile.Type.Array) translateType(expr.getType());
 		WyllFile.Expr value = translateExpression(expr.getFirstOperand(), null, context);
 		// FIXME: should be usize
 		WyllFile.Expr length = translateExpression(expr.getSecondOperand(), Type.Int, context);
@@ -846,7 +847,7 @@ public class CompileTask {
 	}
 
 	public WyllFile.Expr translateArrayInitialiser(Expr.ArrayInitialiser expr, Type.Array target, Context context) {
-		WyllFile.Type type = translateType(expr.getType());
+		WyllFile.Type.Array type = (WyllFile.Type.Array) translateType(expr.getType());
 		WyllFile.Tuple<WyllFile.Expr> exprs = translateExpressions(expr.getOperands(), target.getElement(), context);
 		return new WyllFile.Expr.ArrayInitialiser(type, exprs);
 	}
@@ -1256,7 +1257,8 @@ public class CompileTask {
 	}
 
 	public WyllFile.Expr translateRecordAccess(Expr.RecordAccess expr, Type target, Context context) {
-		WyllFile.Type type = translateType(expr.getType());
+		// FIXME: clearly broken
+		WyllFile.Type.Record type = (WyllFile.Type.Record) translateType(expr.getOperand().getType());
 		WyllFile.Expr src = translateExpression(expr.getOperand(), null, context);
 		WyllFile.Expr nexpr = new WyllFile.Expr.RecordAccess(type, src, expr.getField());
 		if (!expr.isMove()) {
@@ -1266,7 +1268,8 @@ public class CompileTask {
 	}
 
 	public WyllFile.Expr translateRecordInitialiser(Expr.RecordInitialiser expr, Type.Record target, Context context) {
-		WyllFile.Type type = translateType(expr.getType());
+		// FIXME: clearly broken
+		WyllFile.Type.Record type = (WyllFile.Type.Record) translateType(expr.getType());
 		Tuple<Type> fieldTypes = target.getFields().project(2, Type.class);
 		Tuple<WyllFile.Expr> operands = translateExpressions(expr.getOperands(), fieldTypes, context);
 		return new WyllFile.Expr.RecordInitialiser(type, expr.getFields(), operands);
@@ -1365,12 +1368,12 @@ public class CompileTask {
 		}
 	}
 
-	public WyllFile.Type translateArray(Type.Array type) {
+	public WyllFile.Type.Array translateArray(Type.Array type) {
 		WyllFile.Type element = translateSimpleType(type.getElement());
 		return new WyllFile.Type.Array(element);
 	}
 
-	public WyllFile.Type translateBool(Type.Bool type) {
+	public WyllFile.Type.Bool translateBool(Type.Bool type) {
 		return new WyllFile.Type.Bool();
 	}
 
@@ -1395,8 +1398,17 @@ public class CompileTask {
 	}
 
 	public WyllFile.Type translateNominal(Type.Nominal type) {
-		// FIXME: need to do something here
-		return new WyllFile.Type.Nominal(type.getName());
+		try {
+			WhileyFile.Decl.Type decl = typeSystem.resolveExactly(type.getName(), WhileyFile.Decl.Type.class);
+			if (decl.isRecursive()) {
+				// FIXME: is this always the correct translation?
+				return new WyllFile.Type.Recursive(type.getName());
+			} else {
+				return translateType(decl.getType());
+			}
+		} catch (NameResolver.ResolutionError e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	public WyllFile.Type translateNull(Type.Null type) {
@@ -1590,9 +1602,8 @@ public class CompileTask {
 	}
 
 	public WyllFile.Stmt.Block createArrayCoercionBody(Type.Array actual, Type.Array target, Context context) {
-		WyllFile.Type param_t = translateType(actual);
-		WyllFile.Type paramElem_t = translateType(actual.getElement());
-		WyllFile.Type target_t = translateType(target);
+		WyllFile.Type.Array param_t = translateArray(actual);
+		WyllFile.Type.Array target_t = translateArray(target);
 		WyllFile.Type targetElem_t = translateType(target.getElement());
 		//
 		WyllFile.Type var_t = WyllFile.Type.Int; // FIXME: should be usize
@@ -1602,14 +1613,14 @@ public class CompileTask {
 		//
 		WyllFile.Expr initialValue = getDefaultValue(targetElem_t);
 		WyllFile.Expr.ArrayGenerator init = new WyllFile.Expr.ArrayGenerator(target_t, initialValue,
-				new WyllFile.Expr.ArrayLength(var_t, param));
+				new WyllFile.Expr.ArrayLength(target_t, param));
 		WyllFile.Decl.Variable resultdecl = new WyllFile.Decl.Variable(new Tuple<>(), new Identifier("ys"), target_t,
 				init);
 		WyllFile.Expr.VariableAccess result = new WyllFile.Expr.VariableAccess(target_t, new Identifier("ys"));
 		WyllFile.Expr start = new WyllFile.Expr.Constant(var_t, new Value.Int(0));
-		WyllFile.Expr end = new WyllFile.Expr.ArrayLength(var_t, param);
-		WyllFile.Expr.ArrayAccess paramAccess = new WyllFile.Expr.ArrayAccess(paramElem_t, param, var);
-		WyllFile.Expr.ArrayAccess resultAccess = new WyllFile.Expr.ArrayAccess(targetElem_t, result, var);
+		WyllFile.Expr end = new WyllFile.Expr.ArrayLength(target_t, param);
+		WyllFile.Expr.ArrayAccess paramAccess = new WyllFile.Expr.ArrayAccess(param_t, param, var);
+		WyllFile.Expr.ArrayAccess resultAccess = new WyllFile.Expr.ArrayAccess(target_t, result, var);
 		WyllFile.Stmt assignment = new WyllFile.Stmt.Assign(resultAccess,
 				addCoercion(paramAccess, actual.getElement(), target.getElement(), context));
 		WyllFile.Stmt.Block loopBody = new WyllFile.Stmt.Block(assignment);
@@ -1629,7 +1640,7 @@ public class CompileTask {
 			Identifier field = fields.get(i).getName();
 			// FIXME: this is completely broken in the context of method invocations or
 			// other sideeffecting operations.
-			WyllFile.Expr fexpr = new WyllFile.Expr.RecordAccess(actual.getField(field), expr, field);
+			WyllFile.Expr fexpr = new WyllFile.Expr.RecordAccess(actual, expr, field);
 			args[i] = addCoercion(fexpr, _actual.getField(field), _target.getField(field), context);
 		}
 		//
@@ -1749,50 +1760,39 @@ public class CompileTask {
 	public WyllFile.Expr getDefaultValue(WyllFile.Type type) {
 		Value value;
 		switch (type.getOpcode()) {
-		case TYPE_null:
+		case WyllFile.TYPE_recursive:
+		case WyllFile.TYPE_reference:
+		case WyllFile.TYPE_null:
 			value = new Value.Null();
 			break;
-		case TYPE_bool:
+		case WyllFile.TYPE_bool:
 			value = new Value.Bool(false);
 			break;
-		case TYPE_byte:
-			value = new Value.Byte((byte) 0);
-			break;
-		case TYPE_int:
+		case WyllFile.TYPE_int:
 			value = new Value.Int(0);
 			break;
-		case TYPE_array: {
+		case WyllFile.TYPE_array: {
 			WyllFile.Expr v = getDefaultValue(((WyllFile.Type.Array) type).getElement());
 			WyllFile.Expr zero = new WyllFile.Expr.Constant(WyllFile.Type.Int, new Value.Int(0));
-			return new WyllFile.Expr.ArrayGenerator(type, v, zero);
+			return new WyllFile.Expr.ArrayGenerator((WyllFile.Type.Array) type, v, zero);
 		}
-		case TYPE_record: {
+		case WyllFile.TYPE_record: {
 			WyllFile.Type.Record record = (WyllFile.Type.Record) type;
 			Tuple<WyllFile.Decl.Variable> fields = record.getFields();
 			WyllFile.Expr[] operands = new WyllFile.Expr[fields.size()];
 			for (int i = 0; i != fields.size(); ++i) {
 				operands[i] = getDefaultValue(fields.get(i).getType());
 			}
-			return new WyllFile.Expr.RecordInitialiser(type, fields.project(1, Identifier.class),
+			return new WyllFile.Expr.RecordInitialiser((WyllFile.Type.Record) type, fields.project(1, Identifier.class),
 					new Tuple<>(operands));
 		}
-		case TYPE_union: {
+		case WyllFile.TYPE_union: {
 			WyllFile.Type.Union union = (WyllFile.Type.Union) type;
 			return getDefaultValue(union.get(0));
 		}
-		case TYPE_nominal: {
-			WyllFile.Type.Nominal nominal = (WyllFile.Type.Nominal) type;
-			WhileyFile.Decl.Type decl;
-			try {
-				// FIXME: this is sooooo broken
-				decl = typeSystem.resolveExactly(nominal.getName(), WhileyFile.Decl.Type.class);
-				return getDefaultValue(translateType(decl.getType()));
-			} catch (ResolutionError e) {
-				throw new RuntimeException(e);
-			}
-		}
 		default:
-			throw new UnsupportedOperationException("implement me (" + type.getClass().getName() +")");
+			throw new UnsupportedOperationException(
+					"cannot construct default value (" + type.getClass().getName() + ")");
 		}
 		//
 		return new WyllFile.Expr.Constant(type, value);

@@ -605,17 +605,14 @@ public abstract class AbstractConsumer<T> {
 		case TYPE_array:
 			visitArray((Type.Array) type, data);
 			break;
-		case TYPE_any:
-			visitAny((Type.Any) type, data);
-			break;
 		case TYPE_bool:
 			visitBool((Type.Bool) type, data);
 			break;
 		case TYPE_int:
 			visitInt((Type.Int) type, data);
 			break;
-		case TYPE_nominal:
-			visitNominal((Type.Nominal) type, data);
+		case TYPE_recursive:
+			visitRecursive((Type.Recursive) type, data);
 			break;
 		case TYPE_null:
 			visitNull((Type.Null) type, data);
@@ -644,10 +641,6 @@ public abstract class AbstractConsumer<T> {
 		visitType(type.getElement(), data);
 	}
 
-	public void visitAny(Type.Any type, T data) {
-
-	}
-
 	public void visitBool(Type.Bool type, T data) {
 
 	}
@@ -661,7 +654,7 @@ public abstract class AbstractConsumer<T> {
 		visitTypes(type.getReturns(), data);
 	}
 
-	public void visitNominal(Type.Nominal type, T data) {
+	public void visitRecursive(Type.Recursive type, T data) {
 
 	}
 

@@ -162,19 +162,20 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 	public static final int DECL_importfrom = DECL_mask + 2;
 	public static final int DECL_staticvar = DECL_mask + 3;
 	public static final int DECL_type = DECL_mask + 4;
-	public static final int DECL_function = DECL_mask + 5;
-	public static final int DECL_method = DECL_mask + 6;
-	public static final int DECL_property = DECL_mask + 7;
-	public static final int DECL_lambda = DECL_mask + 8;
-	public static final int DECL_variable = DECL_mask + 9;
-	public static final int DECL_variableinitialiser = DECL_mask + 10;
+	public static final int DECL_rectype = DECL_mask + 5;
+	public static final int DECL_function = DECL_mask + 6;
+	public static final int DECL_method = DECL_mask + 7;
+	public static final int DECL_property = DECL_mask + 8;
+	public static final int DECL_lambda = DECL_mask + 9;
+	public static final int DECL_variable = DECL_mask + 10;
+	public static final int DECL_variableinitialiser = DECL_mask + 11;
 
-	public static final int MOD_native = DECL_mask + 11;
-	public static final int MOD_export = DECL_mask + 12;
-	public static final int MOD_final = DECL_mask + 13;
-	public static final int MOD_protected = DECL_mask + 14;
-	public static final int MOD_private = DECL_mask + 15;
-	public static final int MOD_public = DECL_mask + 16;
+	public static final int MOD_native = DECL_mask + 12;
+	public static final int MOD_export = DECL_mask + 13;
+	public static final int MOD_final = DECL_mask + 14;
+	public static final int MOD_protected = DECL_mask + 15;
+	public static final int MOD_private = DECL_mask + 16;
+	public static final int MOD_public = DECL_mask + 17;
 	// TYPES: 00100000 (32) -- 00111111 (63)
 	public static final int TYPE_mask = 0b000100000;
 	public static final int TYPE_void = TYPE_mask + 0;
@@ -887,6 +888,14 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 
 			public Decl.Variable getVariableDeclaration() {
 				return (Decl.Variable) get(2);
+			}
+
+			public boolean isRecursive() {
+				return opcode == DECL_rectype;
+			}
+
+			public void setRecursive() {
+				this.opcode = DECL_rectype;
 			}
 
 			@SuppressWarnings("unchecked")
@@ -4734,6 +4743,16 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			public SyntacticItem construct(int opcode, SyntacticItem[] operands, byte[] data) {
 				return new Decl.Type((Tuple<Modifier>) operands[0], (Identifier) operands[1],
 						(Decl.Variable) operands[2], (Tuple<Expr>) operands[3]);
+			}
+		};
+		schema[DECL_rectype] = new Schema(Operands.FOUR, Data.ZERO, "DECL_rectype") {
+			@SuppressWarnings("unchecked")
+			@Override
+			public SyntacticItem construct(int opcode, SyntacticItem[] operands, byte[] data) {
+				Decl.Type r = new Decl.Type((Tuple<Modifier>) operands[0], (Identifier) operands[1],
+						(Decl.Variable) operands[2], (Tuple<Expr>) operands[3]);
+				r.setRecursive();
+				return r;
 			}
 		};
 		schema[DECL_function] = new Schema(Operands.SEVEN, Data.ZERO, "DECL_function") {

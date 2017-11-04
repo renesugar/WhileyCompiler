@@ -78,11 +78,10 @@ public class WyllFile extends AbstractCompilationUnit<WyllFile> {
 	// TYPES: 00100000 (32) -- 00111111 (63)
 	public static final int TYPE_mask = 0b000100000;
 	public static final int TYPE_void = TYPE_mask + 0;
-	public static final int TYPE_any = TYPE_mask + 1;
 	public static final int TYPE_null = TYPE_mask + 2;
 	public static final int TYPE_bool = TYPE_mask + 3;
 	public static final int TYPE_int = TYPE_mask + 4;
-	public static final int TYPE_nominal = TYPE_mask + 6;
+	public static final int TYPE_recursive = TYPE_mask + 6;
 	public static final int TYPE_reference = TYPE_mask + 7;
 	public static final int TYPE_array = TYPE_mask + 9;
 	public static final int TYPE_record = TYPE_mask + 10;
@@ -2523,7 +2522,6 @@ public class WyllFile extends AbstractCompilationUnit<WyllFile> {
 
 	public interface Type extends SyntacticItem {
 
-		public static final Any Any = new Any();
 		public static final Void Void = new Void();
 		public static final Bool Bool = new Bool();
 		public static final Int Int = new Int();
@@ -2542,34 +2540,6 @@ public class WyllFile extends AbstractCompilationUnit<WyllFile> {
 
 		public interface Primitive extends Atom {
 
-		}
-
-		/**
-		 * The type <code>any</code> represents the type whose variables may hold any
-		 * possible value. <b>NOTE:</b> the any type is top in the type lattice.
-		 *
-		 * @author David J. Pearce
-		 *
-		 */
-		public static class Any extends AbstractSyntacticItem implements Primitive {
-			public Any() {
-				super(TYPE_any);
-			}
-
-			@Override
-			public Type substitute(Map<Identifier,Identifier> binding) {
-				return this;
-			}
-
-			@Override
-			public Any clone(SyntacticItem[] operands) {
-				return new Any();
-			}
-
-			@Override
-			public String toString() {
-				return "any";
-			}
 		}
 
 		/**
@@ -2911,10 +2881,10 @@ public class WyllFile extends AbstractCompilationUnit<WyllFile> {
 		 *
 		 * @return
 		 */
-		public static class Nominal extends AbstractSyntacticItem implements Type {
+		public static class Recursive extends AbstractSyntacticItem implements Type {
 
-			public Nominal(Name name) {
-				super(TYPE_nominal, name);
+			public Recursive(Name name) {
+				super(TYPE_recursive, name);
 			}
 
 			public Name getName() {
@@ -2926,13 +2896,13 @@ public class WyllFile extends AbstractCompilationUnit<WyllFile> {
 			}
 
 			@Override
-			public Type.Nominal substitute(Map<Identifier,Identifier> binding) {
+			public Type.Recursive substitute(Map<Identifier,Identifier> binding) {
 				return this;
 			}
 
 			@Override
-			public Nominal clone(SyntacticItem[] operands) {
-				return new Nominal((Name) operands[0]);
+			public Recursive clone(SyntacticItem[] operands) {
+				return new Recursive((Name) operands[0]);
 			}
 
 			@Override
@@ -3208,7 +3178,7 @@ public class WyllFile extends AbstractCompilationUnit<WyllFile> {
 	}
 
 	private static boolean needsBraces(Type type) {
-		if (type instanceof Type.Atom || type instanceof Type.Nominal) {
+		if (type instanceof Type.Atom || type instanceof Type.Recursive) {
 			return false;
 		} else {
 			return true;
