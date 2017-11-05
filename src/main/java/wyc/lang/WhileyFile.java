@@ -3576,7 +3576,24 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		public static class RecordInitialiser extends AbstractExpr implements Expr, NaryOperator {
 
 			public RecordInitialiser(Type type, Tuple<Identifier> fields, Tuple<Expr> operands) {
+				// FIXME: it would be nice for the constructor to require a record type;
+				// however, the parser constructs multiple initialisers during parsing (even
+				// when only one is present).  This causes subsequent problems down the track.
 				super(EXPR_recordinitialiser, type, fields, operands);
+			}
+
+			@Override
+			public Type.Record getType() {
+				return (Type.Record) super.getType();
+			}
+
+			@Override
+			public void setType(Type type) {
+				if (type instanceof Type.Record) {
+					super.setType(type);
+				} else {
+					throw new IllegalArgumentException("invalid record initialiser type");
+				}
 			}
 
 			public Tuple<Identifier> getFields() {

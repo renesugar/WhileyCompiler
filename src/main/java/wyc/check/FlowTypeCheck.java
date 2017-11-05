@@ -1566,7 +1566,8 @@ public class FlowTypeCheck {
 					expression);
 		}
 		// Allocate and set type for expression
-		expression.setType(expression.getHeap().allocate(type));
+		type = expression.getHeap().allocate(type);
+		expression.setType(type);
 		return type;
 	}
 

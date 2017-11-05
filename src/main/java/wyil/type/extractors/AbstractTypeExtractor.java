@@ -13,15 +13,12 @@
 // limitations under the License.
 package wyil.type.extractors;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 
 import static wyc.lang.WhileyFile.Type;
 import static wyc.lang.WhileyFile.Decl;
 import wybs.lang.NameResolver;
 import wybs.lang.NameResolver.ResolutionError;
-import wybs.util.AbstractCompilationUnit.Identifier;
-import wybs.util.AbstractCompilationUnit.Tuple;
 import wycc.util.ArrayUtils;
 import wyil.type.SubtypeOperator.LifetimeRelation;
 import wyil.type.TypeExtractor;
@@ -75,7 +72,7 @@ import wyil.type.TypeSystem;
  *
  * @param <T>
  */
-public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtractor<T,Object> {
+public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtractor<T, Object> {
 	protected final NameResolver resolver;
 	protected final TypeSystem typeSystem;
 
@@ -91,11 +88,11 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 	}
 
 	/**
-	 * Convert an arbitrary type to <i>Disjunctive Normal Form (DNF)</i>. That
-	 * is a type with a specific structure made up from one or more "conjuncts"
-	 * which are unioned together. Each conjunct contains one or more signed
-	 * atoms which are intersected. For example, <code>int&(null|bool)</code> is
-	 * converted into <code>(int&null)|(int&bool)</code>.
+	 * Convert an arbitrary type to <i>Disjunctive Normal Form (DNF)</i>. That is a
+	 * type with a specific structure made up from one or more "conjuncts" which are
+	 * unioned together. Each conjunct contains one or more signed atoms which are
+	 * intersected. For example, <code>int&(null|bool)</code> is converted into
+	 * <code>(int&null)|(int&bool)</code>.
 	 *
 	 * @param type
 	 * @param atoms
@@ -103,11 +100,11 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 	 * @throws ResolutionError
 	 */
 	protected Disjunct toDisjunctiveNormalForm(Type type) throws ResolutionError {
-		if(type == null) {
+		if (type == null) {
 			throw new IllegalArgumentException("type to extract cannot be null");
 		} else if (type instanceof Type.Primitive) {
 			return toDisjunctiveNormalForm((Type.Primitive) type);
-		} else if(type instanceof Type.Array) {
+		} else if (type instanceof Type.Array) {
 			return toDisjunctiveNormalForm((Type.Array) type);
 		} else if (type instanceof Type.Reference) {
 			return toDisjunctiveNormalForm((Type.Reference) type);
@@ -157,7 +154,7 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 		//
 		for (int i = 0; i != type.size(); ++i) {
 			Disjunct child = toDisjunctiveNormalForm(type.get(i));
-			if(result == null) {
+			if (result == null) {
 				result = child;
 			} else {
 				result = result.union(child);
@@ -167,12 +164,12 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 		return result;
 	}
 
-	protected  Disjunct toDisjunctiveNormalForm(Type.Intersection type) throws ResolutionError {
+	protected Disjunct toDisjunctiveNormalForm(Type.Intersection type) throws ResolutionError {
 		Disjunct result = null;
 		//
 		for (int i = 0; i != type.size(); ++i) {
 			Disjunct child = toDisjunctiveNormalForm(type.get(i));
-			if(result == null) {
+			if (result == null) {
 				result = child;
 			} else {
 				result = result.intersect(child);
@@ -183,7 +180,7 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 	}
 
 	protected Disjunct toDisjunctiveNormalForm(Type.Nominal nominal) throws ResolutionError {
-		Decl.Type decl = resolver.resolveExactly(nominal.getName(),Decl.Type.class);
+		Decl.Type decl = resolver.resolveExactly(nominal.getName(), Decl.Type.class);
 		return toDisjunctiveNormalForm(decl.getVariableDeclaration().getType());
 	}
 
@@ -197,19 +194,19 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 	protected T construct(Disjunct type, LifetimeRelation lifetimes) throws ResolutionError {
 		T result = null;
 		Conjunct[] conjuncts = type.conjuncts;
-		for(int i=0;i!=conjuncts.length;++i) {
+		for (int i = 0; i != conjuncts.length; ++i) {
 			Conjunct conjunct = conjuncts[i];
-			if(!isVoid(conjunct, lifetimes)) {
+			if (!isVoid(conjunct, lifetimes)) {
 				T tmp = construct(conjunct);
-				if(tmp == null) {
+				if (tmp == null) {
 					// This indicates one of the conjuncts did not generate a proper
 					// extraction. At which point, there is no possible extraction
 					// and we can terminate early.
 					return null;
-				} else if(result == null) {
+				} else if (result == null) {
 					result = tmp;
 				} else {
-					result = union(result,tmp);
+					result = union(result, tmp);
 				}
 			}
 		}
@@ -217,10 +214,9 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 	}
 
 	/**
-	 * Determine whether a given conjunct is equivalent to <code>void</code> or
-	 * not. For example, <code>int & !int</code> is equivalent to
-	 * <code>void</code>. Likewise, <code>{int f} & !{any f}</code> is
-	 * equivalent to <code>void</code>.
+	 * Determine whether a given conjunct is equivalent to <code>void</code> or not.
+	 * For example, <code>int & !int</code> is equivalent to <code>void</code>.
+	 * Likewise, <code>{int f} & !{any f}</code> is equivalent to <code>void</code>.
 	 *
 	 * @param type
 	 * @return
@@ -231,12 +227,12 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 		// particular, when Type.Union and Type.Intersection are interfaces, we
 		// can make Disjunct and Conjunct implement them, thus avoiding this
 		// unnecessary copying of data.
-		Type.Atom[] positives = Arrays.copyOf(type.positives,type.positives.length);
-		Type.Atom[] negatives = Arrays.copyOf(type.negatives,type.negatives.length);
+		Type.Atom[] positives = Arrays.copyOf(type.positives, type.positives.length);
+		Type.Atom[] negatives = Arrays.copyOf(type.negatives, type.negatives.length);
 		Type.Intersection lhs = new Type.Intersection(positives);
 		Type.Union rhs = new Type.Union(negatives);
 		//
-		return typeSystem.isVoid(new Type.Difference(lhs,rhs), lifetimes);
+		return typeSystem.isVoid(new Type.Difference(lhs, rhs), lifetimes);
 	}
 
 	protected T construct(Conjunct type) {
@@ -269,205 +265,31 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 
 	protected abstract T construct(Type.Atom type);
 
-	/**
-	 * Union two canonical conjuncts together
-	 *
-	 * @param lhs
-	 * @param rhs
-	 * @return
-	 */
 	protected abstract T union(T lhs, T rhs);
 
-	/**
-	 * Intersect two positive atoms together
-	 * @param lhs
-	 * @param rhs
-	 * @return
-	 */
 	protected abstract T intersect(T lhs, T rhs);
 
-	/**
-	 * Subtract one position atom from another.
-	 *
-	 * @param lhs
-	 * @param rhs
-	 * @return
-	 */
 	protected abstract T subtract(T lhs, T rhs);
 
-	// ==========================================================
-	// Common record operators. These are included because they are reused, and yet
-	// are also quite complex.
-	// ==========================================================
-
-	protected Type.Record subtract(Type.Record lhs, Type.Record rhs) {
-		ArrayList<Decl.Variable> fields = new ArrayList<>();
-		Tuple<Decl.Variable> lhsFields = lhs.getFields();
-		Tuple<Decl.Variable> rhsFields = rhs.getFields();
-		for (int i = 0; i != lhsFields.size(); ++i) {
-			for (int j = 0; j != rhsFields.size(); ++j) {
-				Decl.Variable lhsField = lhsFields.get(i);
-				Decl.Variable rhsField = rhsFields.get(j);
-				Identifier lhsFieldName = lhsField.getName();
-				Identifier rhsFieldName = rhsField.getName();
-				if (lhsFieldName.equals(rhsFieldName)) {
-					// FIXME: could potentially do better here
-					Type negatedRhsType = new Type.Negation(rhsField.getType());
-					Type type = intersectionHelper(lhsField.getType(), negatedRhsType);
-					fields.add(new Decl.Variable(new Tuple<>(), lhsFieldName, type));
-					break;
-				}
-			}
-		}
-		if(fields.size() != lhsFields.size()) {
-			// FIXME: need to handle the case of open records here.
-			return lhs;
-		} else {
-			return new Type.Record(lhs.isOpen(), new Tuple<>(fields));
-		}
-	}
-
-	protected Type.Record intersect(Type.Record lhs, Type.Record rhs) {
-		//
-		Tuple<Decl.Variable> lhsFields = lhs.getFields();
-		Tuple<Decl.Variable> rhsFields = rhs.getFields();
-		// Determine the number of matching fields. That is, fields with the
-		// same name.
-		int matches = countMatchingFields(lhsFields, rhsFields);
-		// When intersecting two records, the number of fields is only
-		// allowed to differ if one of them is an open record. Therefore, we
-		// need to pay careful attention to the size of the resulting match
-		// in comparison with the original records.
-		if (matches < lhsFields.size() && !rhs.isOpen()) {
-			// Not enough matches made to meet the requirements of the lhs
-			// type.
-			return null;
-		} else if (matches < rhsFields.size() && !lhs.isOpen()) {
-			// Not enough matches made to meet the requirements of the rhs
-			// type.
-			return null;
-		} else {
-			// At this point, we know the intersection succeeds. The next
-			// job is to determine the final set of field declarations.
-			int lhsRemainder = lhsFields.size() - matches;
-			int rhsRemainder = rhsFields.size() - matches;
-			Decl.Variable[] fields = new Decl.Variable[matches + lhsRemainder + rhsRemainder];
-			// Extract all matching fields first
-			int index = extractMatchingFields(lhsFields, rhsFields, fields);
-			// Extract remaining lhs fields second
-			index = extractNonMatchingFields(lhsFields, rhsFields, fields, index);
-			// Extract remaining rhs fields last
-			index = extractNonMatchingFields(rhsFields, lhsFields, fields, index);
-			// The intersection of two records can only be open when both
-			// are themselves open.
-			boolean isOpen = lhs.isOpen() && rhs.isOpen();
-			//
-			return new Type.Record(isOpen, new Tuple<>(fields));
-		}
-	}
-
 	/**
-	 * Count the number of matching fields. That is, fields with the same name.
-	 *
-	 * @param lhsFields
-	 * @param rhsFields
-	 * @return
-	 */
-	protected int countMatchingFields(Tuple<Decl.Variable> lhsFields, Tuple<Decl.Variable> rhsFields) {
-		int count = 0;
-		for (int i = 0; i != lhsFields.size(); ++i) {
-			for (int j = 0; j != rhsFields.size(); ++j) {
-				Decl.Variable lhsField = lhsFields.get(i);
-				Decl.Variable rhsField = rhsFields.get(j);
-				Identifier lhsFieldName = lhsField.getName();
-				Identifier rhsFieldName = rhsField.getName();
-				if (lhsFieldName.equals(rhsFieldName)) {
-					count = count + 1;
-				}
-			}
-		}
-		return count;
-	}
-
-	/**
-	 * Extract all matching fields (i.e. fields with the same name) into the
-	 * result array.
-	 *
-	 * @param lhsFields
-	 * @param rhsFields
-	 * @param result
-	 * @return
-	 */
-	protected int extractMatchingFields(Tuple<Decl.Variable> lhsFields, Tuple<Decl.Variable> rhsFields,
-			Decl.Variable[] result) {
-		int index = 0;
-		// Extract all matching fields first.
-		for (int i = 0; i != lhsFields.size(); ++i) {
-			for (int j = 0; j != rhsFields.size(); ++j) {
-				Decl.Variable lhsField = lhsFields.get(i);
-				Decl.Variable rhsField = rhsFields.get(j);
-				Identifier lhsFieldName = lhsField.getName();
-				Identifier rhsFieldName = rhsField.getName();
-				if (lhsFieldName.equals(rhsFieldName)) {
-					Type type = intersectionHelper(lhsField.getType(), rhsField.getType());
-					Decl.Variable combined = new Decl.Variable(new Tuple<>(), lhsFieldName, type);
-					result[index++] = combined;
-				}
-			}
-		}
-		return index;
-	}
-
-	/**
-	 * Extract fields from lhs which do not match any field in the rhs. That is,
-	 * there is no field in the rhs with the same name.
-	 *
-	 * @param lhsFields
-	 * @param rhsFields
-	 * @param result
-	 * @param index
-	 * @return
-	 */
-	protected int extractNonMatchingFields(Tuple<Decl.Variable> lhsFields, Tuple<Decl.Variable> rhsFields,
-			Decl.Variable[] result, int index) {
-		outer: for (int i = 0; i != lhsFields.size(); ++i) {
-			for (int j = 0; j != rhsFields.size(); ++j) {
-				Decl.Variable lhsField = lhsFields.get(i);
-				Decl.Variable rhsField = rhsFields.get(j);
-				Identifier lhsFieldName = lhsField.getName();
-				Identifier rhsFieldName = rhsField.getName();
-				if (lhsFieldName.equals(rhsFieldName)) {
-					// This is a matching field. Therefore, continue on to the
-					// next lhs field
-					continue outer;
-				}
-			}
-			result[index++] = lhsFields.get(i);
-		}
-		return index;
-	}
-
-	// ==========================================================
-
-	/**
-	 * Provides a simplistic form of type union which, in some cases, does
-	 * slightly better than simply creating a new union. For example, unioning
-	 * <code>int</code> with <code>int</code> will return <code>int</code>
-	 * rather than <code>int|int</code>.
+	 * Provides a simplistic form of type union which, in some cases, does slightly
+	 * better than simply creating a new union. For example, unioning
+	 * <code>int</code> with <code>int</code> will return <code>int</code> rather
+	 * than <code>int|int</code>.
 	 *
 	 * @param lhs
 	 * @param rhs
 	 * @return
 	 */
 	protected Type unionHelper(Type lhs, Type rhs) {
-		if(lhs.equals(rhs)) {
+		if (lhs.equals(rhs)) {
 			return lhs;
-		} else if(lhs instanceof Type.Void) {
+		} else if (lhs instanceof Type.Void) {
 			return rhs;
-		} else if(rhs instanceof Type.Void) {
+		} else if (rhs instanceof Type.Void) {
 			return lhs;
 		} else {
-			return new Type.Union(new Type[]{lhs,rhs});
+			return new Type.Union(new Type[] { lhs, rhs });
 		}
 	}
 
@@ -482,21 +304,21 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 	 * @return
 	 */
 	protected Type intersectionHelper(Type lhs, Type rhs) {
-		if(lhs.equals(rhs)) {
+		if (lhs.equals(rhs)) {
 			return lhs;
-		} else if(lhs instanceof Type.Void) {
+		} else if (lhs instanceof Type.Void) {
 			return lhs;
-		} else if(rhs instanceof Type.Void) {
+		} else if (rhs instanceof Type.Void) {
 			return rhs;
 		} else {
-			return new Type.Intersection(new Type[]{lhs,rhs});
+			return new Type.Intersection(new Type[] { lhs, rhs });
 		}
 	}
 
 	/**
-	 * A signed type is simply a type which is either positive or negatively
-	 * signed. For example, <code>{int f}</code> is a positively signed record,
-	 * whilst <code>!{int f}</code> is negatively signed record.
+	 * A signed type is simply a type which is either positive or negatively signed.
+	 * For example, <code>{int f}</code> is a positively signed record, whilst
+	 * <code>!{int f}</code> is negatively signed record.
 	 *
 	 * @author David J. Pearce
 	 *
@@ -509,14 +331,17 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 			this.sign = sign;
 			this.type = type;
 		}
+
 		public boolean getSign() {
 			return sign;
 		}
+
 		public Type.Atom getType() {
 			return type;
 		}
+
 		public Signed negate() {
-			return new Signed(!sign,type);
+			return new Signed(!sign, type);
 		}
 	}
 
@@ -524,12 +349,12 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 		private final Conjunct[] conjuncts;
 
 		public Disjunct(Type.Atom atom) {
-			conjuncts = new Conjunct[]{new Conjunct(atom)};
+			conjuncts = new Conjunct[] { new Conjunct(atom) };
 		}
 
 		public Disjunct(Conjunct... conjuncts) {
-			for(int i=0;i!=conjuncts.length;++i) {
-				if(conjuncts[i] == null) {
+			for (int i = 0; i != conjuncts.length; ++i) {
+				if (conjuncts[i] == null) {
 					throw new IllegalArgumentException("conjuncts cannot contain null");
 				}
 			}
@@ -575,8 +400,8 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 		@Override
 		public String toString() {
 			String r = "";
-			for(int i=0;i!=conjuncts.length;++i) {
-				if(i != 0) {
+			for (int i = 0; i != conjuncts.length; ++i) {
+				if (i != 0) {
 					r += " \\/ ";
 				}
 				r += conjuncts[i];
@@ -590,7 +415,7 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 		private final Type.Atom[] negatives;
 
 		public Conjunct(Type.Atom positive) {
-			positives = new Type.Atom[]{positive};
+			positives = new Type.Atom[] { positive };
 			negatives = new Type.Atom[0];
 		}
 
@@ -602,7 +427,7 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 		public Conjunct intersect(Conjunct other) {
 			Type.Atom[] combinedPositives = ArrayUtils.append(positives, other.positives);
 			Type.Atom[] combinedNegatives = ArrayUtils.append(negatives, other.negatives);
-			return new Conjunct(combinedPositives,combinedNegatives);
+			return new Conjunct(combinedPositives, combinedNegatives);
 		}
 
 		public Disjunct negate() {
@@ -622,21 +447,22 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 		@Override
 		public String toString() {
 			String r = "(";
-			for(int i=0;i!=positives.length;++i) {
-				if(i != 0) {
+			for (int i = 0; i != positives.length; ++i) {
+				if (i != 0) {
 					r += " /\\ ";
 				}
 				r += positives[i];
 			}
 			r += ") - (";
-			for(int i=0;i!=negatives.length;++i) {
-				if(i != 0) {
+			for (int i = 0; i != negatives.length; ++i) {
+				if (i != 0) {
 					r += " \\/ ";
 				}
 				r += negatives[i];
 			}
 			return r + ")";
 		}
+
 		private static final Type.Atom[] EMPTY_ATOMS = new Type.Atom[0];
 	}
 }

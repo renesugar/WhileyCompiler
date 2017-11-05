@@ -142,9 +142,6 @@ public class StdTypeMangler implements TypeMangler {
 		case TYPE_property:
 			writeTypeMangleFunctionOrMethod('p', (Type.Callable) t, lifetimes, mangle);
 			break;
-		case TYPE_negation:
-			writeTypeMangleNegation((Type.Negation) t, lifetimes, mangle);
-			break;
 		case TYPE_union:
 			writeTypeMangleUnion((Type.Union) t, lifetimes, mangle);
 			break;
@@ -211,11 +208,6 @@ public class StdTypeMangler implements TypeMangler {
 		for (int i = 0; i != returns.size(); ++i) {
 			writeTypeMangle(returns.get(i), lifetimes, mangle);
 		}
-	}
-
-	private void writeTypeMangleNegation(Type.Negation t, Tuple<Identifier> lifetimes, StringBuilder mangle) {
-		mangle.append('n');
-		writeTypeMangle(t.getElement(), lifetimes, mangle);
 	}
 
 	private void writeTypeMangleUnion(Type.Union t, Tuple<Identifier> lifetimes, StringBuilder mangle) {

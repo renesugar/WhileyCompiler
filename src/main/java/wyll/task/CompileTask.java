@@ -157,7 +157,7 @@ public class CompileTask {
 		Tuple<WyllFile.Decl.Variable> parameters = translateVariables(decl.getParameters(), context);
 		Tuple<WyllFile.Decl.Variable> returns = translateVariables(decl.getReturns(), context);
 		WyllFile.Expr body = translateExpression(decl.getBody(), null, context);
-		return new WyllFile.Expr.Lambda(parameters, returns, decl.getCaptures(), decl.getLifetimes(), body);
+		return new WyllFile.Expr.Lambda(parameters, returns, decl.getCapturedLifetimes(), decl.getLifetimes(), body);
 	}
 
 	public Tuple<WyllFile.Decl.Variable> translateVariables(Tuple<WhileyFile.Decl.Variable> vars, Context context) {
@@ -1269,7 +1269,7 @@ public class CompileTask {
 
 	public WyllFile.Expr translateRecordInitialiser(Expr.RecordInitialiser expr, Type.Record target, Context context) {
 		// FIXME: clearly broken
-		WyllFile.Type.Record type = (WyllFile.Type.Record) translateType(expr.getType());
+		WyllFile.Type.Record type = (WyllFile.Type.Record) translateRecord(expr.getType());
 		Tuple<Type> fieldTypes = target.getFields().project(2, Type.class);
 		Tuple<WyllFile.Expr> operands = translateExpressions(expr.getOperands(), fieldTypes, context);
 		return new WyllFile.Expr.RecordInitialiser(type, expr.getFields(), operands);
@@ -1348,7 +1348,6 @@ public class CompileTask {
 		case TYPE_void:
 			return translateVoid((Type.Void) type);
 		case TYPE_intersection:
-		case TYPE_negation:
 			throw new IllegalArgumentException("invalid simple type encountered (" + type.getClass().getName() + ")");
 		default:
 			throw new IllegalArgumentException("unknown type encountered (" + type.getClass().getName() + ")");
