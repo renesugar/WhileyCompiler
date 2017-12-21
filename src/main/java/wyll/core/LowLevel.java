@@ -140,13 +140,13 @@ public class LowLevel {
 
 		public E visitArrayInitialiser(Type.Array type, List<E> operands);
 
+		public E visitArrayInitialiser(Type.Array type, E length);
+
 		public E visitArrayGenerator(Type.Array type, E value, E length);
 
 		public E visitArrayLength(Type.Array type, E source);
 
 		public E visitArrayAccess(List<Type.Array> type, E source, E index);
-
-		public E visitArrayCoercion(Type.Int target, Type.Int actual, E expr);
 
 		// ===================================================
 		// Record Expressions

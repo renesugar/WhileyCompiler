@@ -36,6 +36,8 @@ public class LowLevelDriver<D, S, E extends S> {
 	 */
 	private final ArrayList<D> auxillaries = new ArrayList<>();
 
+	private final ArrayList<Pair<Type,Type>> runtimeTypeTests = new ArrayList<>();
+
 	public LowLevelDriver(TypeSystem typeSystem, LowLevel.Visitor<D, S, E> visitor) {
 		this.typeSystem = typeSystem;
 		this.mangler = new StdTypeMangler();
@@ -51,6 +53,7 @@ public class LowLevelDriver<D, S, E extends S> {
 				declarations.add(d);
 			}
 		}
+		constructRuntimeTypeTests();
 		declarations.addAll(auxillaries);
 		return declarations;
 	}
@@ -1186,135 +1189,7 @@ public class LowLevelDriver<D, S, E extends S> {
 		Type lhsT = expr.getOperand().getType();
 		Type rhsT = expr.getTestType();
 		E operand = visitExpression(expr.getOperand(), lhsT);
-		return constructRuntimeTypeTest(operand, lhsT, rhsT);
-	}
-
-	public E constructRuntimeTypeTest(E expr, Type actual, Type test) {
-		if(actual.equals(test)) {
-			return visitor.visitLogicalInitialiser(true);
-		} else if (actual.getOpcode() == test.getOpcode()) {
-			switch (actual.getOpcode()) {
-			case TYPE_null:
-			case TYPE_bool:
-			case TYPE_byte:
-			case TYPE_int:
-				return visitor.visitLogicalInitialiser(true);
-			case TYPE_union:
-				return constructRuntimeTypeTest(expr, actual, (Type.Union) test);
-			case TYPE_nominal:
-				return constructRuntimeTypeTest(expr, actual, (Type.Nominal) test);
-			default:
-				throw new RuntimeException("need to work harder on type tests (" + actual + " is " + test + ")");
-			}
-		} else if (actual instanceof Type.Nominal) {
-			return constructRuntimeTypeTest(expr, (Type.Nominal) actual, test);
-		} else if (test instanceof Type.Nominal) {
-			return constructRuntimeTypeTest(expr, actual, (Type.Nominal) test);
-		} else if (actual instanceof Type.Union) {
-			return constructRuntimeTypeTest(expr, (Type.Union) actual, test);
-		} else if (test instanceof Type.Union) {
-			return constructRuntimeTypeTest(expr, actual, (Type.Union) test);
-		} else {
-			throw new IllegalArgumentException("need to implement runtime tests better");
-		}
-	}
-
-	public E constructRuntimeTypeTest(E expr, Type.Nominal actual, Type test) {
-		try {
-			WhileyFile.Decl.Type decl = typeSystem.resolveExactly(actual.getName(), WhileyFile.Decl.Type.class);
-			return constructRuntimeTypeTest(expr, decl.getType(), test);
-		} catch (ResolutionError e) {
-			throw new RuntimeException(e);
-		}
-	}
-
-	public E constructRuntimeTypeTest(E expr, Type actual, Type.Nominal test) {
-		try {
-			WhileyFile.Decl.Type decl = typeSystem.resolveExactly(test.getName(), WhileyFile.Decl.Type.class);
-			E result = constructRuntimeTypeTest(expr, actual, decl.getType());
-			if(decl.getInvariant().size() > 0) {
-				// Type invariants are present so invoke invariant method to check them
-				List<LowLevel.Type> parameters = new ArrayList<>();
-				parameters.add(visitType(actual));
-				LowLevel.Type.Method type = visitor.visitTypeMethod(parameters, visitBool(Type.Bool));
-				String name = decl.getName().toString() + "$inv";
-				List<E> arguments = new ArrayList<>();
-				arguments.add(expr);
-				result = visitor.visitLogicalAnd(result, visitor.visitDirectInvocation(type, name, arguments));
-			}
-			return result;
-		} catch (ResolutionError e) {
-			throw new RuntimeException(e);
-		}
-	}
-
-	public E constructRuntimeTypeTest(E expr, Type.Union actual, Type test) {
-		LowLevel.Type.Int tagT = visitInt(Type.Int);
-		LowLevel.Type.Union llActualT = visitUnion(actual);
-		int tag = determineTag(actual, test);
-		Type refined = actual.get(tag);
-		expr = visitor.visitUnionAccess(llActualT, expr);
-		expr = visitor.visitIntegerEqual(tagT, expr, visitor.visitIntegerInitialiser(tagT, BigInteger.valueOf(tag)));
-		// FIXME: type invariants
-		if (!refined.equals(test)) {
-			// FIXME: there maybe other situations where actual is equivalent to test, or
-			// perhaps smaller than test?
-			// WyllFile.Expr rest = constructRuntimeTypeTest(addCoercion(expr, actual,
-			// refined), refined, test);
-			// expr = new WyllFile.Expr.LogicalAnd(new Tuple<>(expr,rest));
-			throw new IllegalArgumentException("need to work harder");
-		}
-		return expr;
-	}
-
-	/**
-	 * Translate a runtime type test such as the following:
-	 *
-	 * <pre>
-	 * type neg is (int p) where p < 0
-	 * type pos is (int p) where p > 0
-	 *
-	 * function f(int x) -> bool:
-	 *     return x is pos|neg
-	 * </pre>
-	 *
-	 * This is expanded into roughly the following lowlevel code:
-	 *
-	 * <pre>
-	 * bool neg$inv(int p) {
-	 * 	return p < 0;
-	 * }
-	 *
-	 * bool pos$inv(int p) {
-	 * 	return p > 0;
-	 * }
-	 *
-	 * bool f(int x) {
-	 * 	return neg$inv(x) || pos$inv(x);
-	 * }
-	 * </pre>
-	 *
-	 * The key is that the different cases in the test union are translated into
-	 * logical disjunctions.
-	 *
-	 * @param expr
-	 * @param actual
-	 * @param test
-	 * @return
-	 */
-	public E constructRuntimeTypeTest(E expr, Type actual, Type.Union test) {
-		E result = null;
-		//
-		for(int tag=0;tag!=test.size();++tag) {
-			E clause = constructRuntimeTypeTest(expr,actual,test.get(tag));
-			if(result == null) {
-				result = clause;
-			} else {
-				result = visitor.visitLogicalOr(result, clause);
-			}
-		}
-		//
-		return result;
+		return callRuntimeTypeTest(operand, lhsT, rhsT);
 	}
 
 	public E visitIntegerNegation(Expr.IntegerNegation expr, Type target) {
@@ -1961,14 +1836,65 @@ public class LowLevelDriver<D, S, E extends S> {
 		}
 	}
 
+	private static int coercionIndex = 0;
+
 	public E applyIntCoercion(Type.Int _target, Type.Int _actual, E expr) {
 		LowLevel.Type.Int target = visitInt(_target);
 		LowLevel.Type.Int actual = visitInt(_actual);
 		return visitor.visitIntegerCoercion(target, actual, expr);
 	}
 
-	public E applyArrayCoercion(Type.Array target, Type.Array actual, E expr) {
-		throw new RuntimeException("implement me!");
+	public E applyArrayCoercion(Type.Array _target, Type.Array _actual, E expr) {
+		String name = "coercion$" + coercionIndex++;
+		LowLevel.Type.Array target = visitArray(_target);
+		LowLevel.Type.Array actual = visitArray(_actual);
+		D coercion = constructArrayArrayCoercion(name,_target,_actual);
+		auxillaries.add(coercion);
+		// Finally, construct invocation
+		ArrayList<LowLevel.Type> parameters = new ArrayList<>();
+		parameters.add(target);
+		LowLevel.Type.Method type = visitor.visitTypeMethod(parameters, actual);
+		ArrayList<E> arguments = new ArrayList<>();
+		arguments.add(expr);
+		return visitor.visitDirectInvocation(type, name, arguments);
+	}
+
+	public D constructArrayArrayCoercion(String name, Type.Array target, Type.Array actual) {
+		LowLevel.Type.Int llIndexT = visitor.visitTypeInt(-1);
+		LowLevel.Type.Array llTarget = visitArray(target);
+		LowLevel.Type.Array llActual = visitArray(actual);
+		ArrayList<S> body = new ArrayList<>();
+		// Initialise empty array of same length as input
+		E parameter = visitor.visitVariableAccess(llActual, "x");
+		E length = visitor.visitArrayLength(llActual, parameter);
+		E initialiser = visitor.visitArrayInitialiser(llTarget, length);
+		// Declare output variable
+		body.add(visitor.visitVariableDeclaration(llTarget, "r", initialiser));
+		// Construct the coercion loop body
+		ArrayList<S> loopBody = new ArrayList<>();
+		E actualVar = visitor.visitVariableAccess(llActual, "x");
+		E targetVar = visitor.visitVariableAccess(llTarget, "r");
+		E indexVar = visitor.visitVariableAccess(llIndexT, "i");
+		ArrayList<LowLevel.Type.Array> llTargets = new ArrayList<>();
+		llTargets.add(llTarget);
+		E lhs = visitor.visitArrayAccess(llTargets, targetVar, indexVar);
+		ArrayList<LowLevel.Type.Array> llActuals = new ArrayList<>();
+		llActuals.add(llActual);
+		E rhs = applyCoercion(target.getElement(),actual.getElement(),visitor.visitArrayAccess(llActuals, actualVar, indexVar));
+		loopBody.add(visitor.visitAssign(lhs, rhs));
+		// Construct the coercion loop itself
+		S decl = visitor.visitVariableDeclaration(llIndexT, "i",
+				visitor.visitIntegerInitialiser(llIndexT, BigInteger.ZERO));
+		E condition = visitor.visitIntegerLessThan(llIndexT, indexVar, length);
+		S increment = visitor.visitAssign(indexVar,
+				visitor.visitIntegerAdd(llIndexT, indexVar, visitor.visitIntegerInitialiser(llIndexT, BigInteger.ONE)));
+		body.add(visitor.visitFor(decl, condition, increment, loopBody));
+		//
+		body.add(visitor.visitReturn(targetVar));
+		// Done
+		ArrayList<Pair<LowLevel.Type, String>> parameters = new ArrayList<>();
+		parameters.add(new Pair<>(llActual, "x"));
+		return visitor.visitMethod(name, parameters, llTarget, body);
 	}
 
 	public E applyRecordCoercion(Type.Record target, Type.Record actual, E expr) {
@@ -1996,8 +1922,6 @@ public class LowLevelDriver<D, S, E extends S> {
 			throw new IllegalArgumentException("invalid nominal type (" + target + ")");
 		}
 	}
-
-	private static int coercionIndex = 0;
 
 	public E applyUnionCoercion(Type.Union target, Type.Union actual, E expr) {
 		// Construct coercion method
@@ -2165,6 +2089,231 @@ public class LowLevelDriver<D, S, E extends S> {
 		} catch (NameResolver.ResolutionError e) {
 			throw new RuntimeException(e);
 		}
+	}
+
+	// ==========================================================================
+	// Runtime Type Tests
+	// ==========================================================================
+
+	public E callRuntimeTypeTest(E argument, Type actual, Type test) {
+		// Construct invocation
+		LowLevel.Type llActual = visitType(actual);
+		// Construct method type
+		ArrayList<LowLevel.Type> parameters = new ArrayList<>();
+		parameters.add(llActual);
+		LowLevel.Type.Method type = visitor.visitTypeMethod(parameters, visitBool(Type.Bool));
+		// Construct artgument list
+		ArrayList<E> arguments = new ArrayList<>();
+		arguments.add(argument);
+		//
+		Pair<Type,Type> rtt = new Pair<>(actual,test);
+		int i;
+		for(i=0;i!=runtimeTypeTests.size();++i) {
+			if(runtimeTypeTests.get(i).equals(rtt)) {
+				return visitor.visitDirectInvocation(type, "is$" + i, arguments);
+			}
+		}
+		runtimeTypeTests.add(rtt);
+		// Done
+		return visitor.visitDirectInvocation(type, "is$" + i, arguments);
+	}
+
+	public void constructRuntimeTypeTests() {
+		LowLevel.Type retType = visitor.visitTypeBool();
+		for(int i=0;i!=runtimeTypeTests.size();++i) {
+			// Construct body
+			Pair<Type,Type> rtt = runtimeTypeTests.get(i);
+			List<S> body = constructRuntimeTypeTest(rtt.first(),rtt.second());
+			ArrayList<Pair<LowLevel.Type, String>> parameters = new ArrayList<>();
+			parameters.add(new Pair<>(visitType(rtt.first()),"x"));
+			// Construct auxillary method
+			D method = visitor.visitMethod("is$" + i, parameters, retType, body);
+			auxillaries.add(method);
+		}
+	}
+
+	public List<S> constructRuntimeTypeTest(Type actual, Type test) {
+		if(actual.equals(test)) {
+			// FIXME: should prevent this
+			return constructTrivialRuntimeTypeTest();
+		} else if (actual.getOpcode() == test.getOpcode()) {
+			switch (actual.getOpcode()) {
+			case TYPE_null:
+			case TYPE_bool:
+			case TYPE_byte:
+			case TYPE_int:
+				// FIXME: should prevent this
+				return constructTrivialRuntimeTypeTest();
+			case TYPE_union:
+				return constructUnionUnionRuntimeTypeTest((Type.Union) actual, (Type.Union) test);
+			case TYPE_nominal:
+				return constructNominalNominalRuntimeTypeTest((Type.Nominal) actual, (Type.Nominal) test);
+			default:
+				throw new RuntimeException("need to work harder on type tests (" + actual + " is " + test + ")");
+			}
+		} else if (actual instanceof Type.Nominal) {
+			return constructNominalTypeRuntimeTypeTest((Type.Nominal) actual, test);
+		} else if (actual instanceof Type.Union) {
+			return constructUnionTypeRuntimeTypeTest((Type.Union) actual, test);
+		} else if (test instanceof Type.Union) {
+			return constructTypeUnionRuntimeTypeTest(actual, (Type.Union) test);
+		} else if (test instanceof Type.Nominal) {
+			return constructTypeNominalRuntimeTypeTest(actual, (Type.Nominal) test);
+		} else {
+			throw new IllegalArgumentException("need to implement runtime tests better");
+		}
+	}
+
+	public List<S> constructTrivialRuntimeTypeTest() {
+		ArrayList<S> stmts = new ArrayList<>();
+		stmts.add(visitor.visitReturn(visitor.visitLogicalInitialiser(true)));
+		return stmts;
+	}
+
+	public List<S> constructNominalNominalRuntimeTypeTest(Type.Nominal actual, Type.Nominal test) {
+		// FIXME: could further improve this
+		return constructNominalTypeRuntimeTypeTest(actual,test);
+	}
+
+	public List<S> constructUnionUnionRuntimeTypeTest(Type.Union actual, Type.Union test) {
+		throw new RuntimeException("GOT HERE: " + actual + " is " + test);
+	}
+
+	public List<S> constructNominalTypeRuntimeTypeTest(Type.Nominal actual, Type test) {
+		try {
+			ArrayList<S> stmts = new ArrayList<>();
+			LowLevel.Type type = visitType(actual);
+			WhileyFile.Decl.Type decl = typeSystem.resolveExactly(actual.getName(), WhileyFile.Decl.Type.class);
+			stmts.add(visitor.visitReturn(callRuntimeTypeTest(visitor.visitVariableAccess(type, "x"),decl.getType(), test)));
+			return stmts;
+		} catch (ResolutionError e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	public List<S> constructTypeNominalRuntimeTypeTest(Type actual, Type.Nominal test) {
+		try {
+			LowLevel.Type parameter = visitType(actual);
+			ArrayList<S> stmts = new ArrayList<>();
+			WhileyFile.Decl.Type decl = typeSystem.resolveExactly(test.getName(), WhileyFile.Decl.Type.class);
+			E result = callRuntimeTypeTest(visitor.visitVariableAccess(parameter, "x"), actual, decl.getType());
+			if (decl.getInvariant().size() > 0) {
+				// Type invariants are present so invoke invariant method to check them
+				List<LowLevel.Type> parameters = new ArrayList<>();
+				parameters.add(parameter);
+				LowLevel.Type.Method type = visitor.visitTypeMethod(parameters, visitBool(Type.Bool));
+				String name = decl.getName().toString() + "$inv";
+				List<E> arguments = new ArrayList<>();
+				arguments.add(visitor.visitVariableAccess(parameter, "x"));
+				result = visitor.visitLogicalAnd(result, visitor.visitDirectInvocation(type, name, arguments));
+				stmts.add(visitor.visitReturn(result));
+			}
+			return stmts;
+		} catch (ResolutionError e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	/**
+	 * Translate a runtime type test such as the following:
+	 *
+	 * <pre>
+	 * function f(int|null x) -> bool:
+	 * 	 return x is int
+	 * </pre>
+	 *
+	 * This is expanded roughly speaking into the following low level code:
+	 *
+	 * <pre>
+	 * bool f(int|null x) {
+	 *   return is$0(x);
+	 * }
+	 *
+	 * bool is$0(int|null x) {
+	 *   return x.tag == 0
+	 * }
+	 * </pre>
+	 *
+	 *
+	 *
+	 * @param actual
+	 * @param test
+	 * @return
+	 */
+	public List<S> constructUnionTypeRuntimeTypeTest(Type.Union actual, Type test) {
+		LowLevel.Type.Int tagT = visitInt(Type.Int);
+		LowLevel.Type.Union llActualT = visitUnion(actual);
+		int tag = determineTag(actual, test);
+		Type refined = actual.get(tag);
+		E expr = visitor.visitVariableAccess(llActualT, "x");
+		expr = visitor.visitUnionAccess(llActualT, expr);
+		expr = visitor.visitIntegerEqual(tagT, expr, visitor.visitIntegerInitialiser(tagT, BigInteger.valueOf(tag)));
+		//
+		// FIXME: may need to call type test recursively on accessed value
+		//
+		ArrayList<S> stmts = new ArrayList<>();
+		stmts.add(visitor.visitReturn(expr));
+		return stmts;
+	}
+
+	/**
+	 * Translate a runtime type test such as the following:
+	 *
+	 * <pre>
+	 * type neg is (int p) where p < 0
+	 * type pos is (int p) where p > 0
+	 *
+	 * function f(int x) -> bool:
+	 *     return x is pos|neg
+	 * </pre>
+	 *
+	 * This is expanded into roughly the following lowlevel code:
+	 *
+	 * <pre>
+	 * bool neg$inv(int p) {
+	 * 	return p < 0;
+	 * }
+	 *
+	 * bool pos$inv(int p) {
+	 * 	return p > 0;
+	 * }
+	 *
+	 * bool f(int x) {
+	 * 	return is$0(x)
+	 * }
+	 *
+	 * bool is$0(int x) {
+	 *   return neg$inv(x) || pos$inv(x);
+	 * }
+	 * </pre>
+	 *
+	 * The key is that the different cases in the test union are translated into
+	 * logical disjunctions.
+	 *
+	 * @param expr
+	 * @param actual
+	 * @param test
+	 * @return
+	 */
+	public List<S> constructTypeUnionRuntimeTypeTest(Type actual, Type.Union test) {
+		LowLevel.Type llActual = visitType(actual);
+		LowLevel.Type type = visitor.visitTypeBool();
+		ArrayList<S> stmts = new ArrayList<>();
+		//
+		for (int tag = 0; tag != test.size(); ++tag) {
+			E clause = callRuntimeTypeTest(visitor.visitVariableAccess(llActual, "x"), actual, test.get(tag));
+			if (stmts.size() == 0) {
+				stmts.add(visitor.visitVariableDeclaration(type, "r", clause));
+			} else {
+				E var = visitor.visitVariableAccess(type, "r");
+				clause = visitor.visitLogicalOr(var, clause);
+				stmts.add(visitor.visitAssign(var, clause));
+			}
+		}
+		//
+		stmts.add(visitor.visitReturn(visitor.visitVariableAccess(type, "r")));
+		//
+		return stmts;
 	}
 
 	// ==========================================================================
@@ -2573,9 +2722,6 @@ public class LowLevelDriver<D, S, E extends S> {
 		}
 		return types;
 	}
-
-
-
 
 	/**
 	 * Determine the maximum-width integer type for a bunch of integer types. For
