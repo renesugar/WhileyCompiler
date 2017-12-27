@@ -149,8 +149,20 @@ public class LowLevelDriver<D, S, E extends S> {
 			List<S> body = visitStatement(fm.getBody());
 			return visitor.visitMethod(name, nParameters, retType, body);
 		} else {
-			// FIXME: need to construct appropriate body from where clause
-			throw new UnsupportedOperationException();
+			Decl.Property property = (Decl.Property) decl;
+			Tuple<Expr> invariant = property.getInvariant();
+			ArrayList<S> body = new ArrayList<>();
+			String var = createTemporaryVariable(decl.getIndex());
+			LowLevel.Type varT = visitBool(Type.Bool);
+			body.add(visitor.visitVariableDeclaration(varT, var, visitor.visitLogicalInitialiser(true)));
+			for (int i = 0; i != invariant.size(); ++i) {
+				E lhs = visitor.visitVariableAccess(varT, var);
+				E rhs = visitExpression(invariant.get(i), Type.Bool);
+				rhs = visitor.visitLogicalAnd(lhs, rhs);
+				body.add(visitor.visitAssign(lhs, rhs));
+			}
+			body.add(visitor.visitReturn(visitor.visitVariableAccess(varT, var)));
+			return visitor.visitMethod(name, nParameters, retType, body);
 		}
 	}
 
@@ -1722,8 +1734,14 @@ public class LowLevelDriver<D, S, E extends S> {
 			S retstmt = visitor.visitReturn(retval);
 			ArrayList<wycc.util.Pair<E, List<S>>> branches = new ArrayList<>();
 			ArrayList<S> trueBlock = new ArrayList<>();
-			trueBlock.add(retstmt);
+			ArrayList<S> falseBlock = new ArrayList<>();
 			branches.add(new wycc.util.Pair<>(condition, trueBlock));
+			if(expr instanceof Expr.UniversalQuantifier) {
+				falseBlock.add(retstmt);
+				branches.add(new wycc.util.Pair<>(null, falseBlock));
+			} else {
+				trueBlock.add(retstmt);
+			}
 			stmts.add(visitor.visitIfElse(branches));
 		} else {
 			// This is the recursive case. For each parameter we create a nested foreach
@@ -1844,19 +1862,10 @@ public class LowLevelDriver<D, S, E extends S> {
 		return visitor.visitIntegerCoercion(target, actual, expr);
 	}
 
-	public E applyArrayCoercion(Type.Array _target, Type.Array _actual, E expr) {
-		String name = "coercion$" + coercionIndex++;
-		LowLevel.Type.Array target = visitArray(_target);
-		LowLevel.Type.Array actual = visitArray(_actual);
-		D coercion = constructArrayArrayCoercion(name,_target,_actual);
-		auxillaries.add(coercion);
-		// Finally, construct invocation
-		ArrayList<LowLevel.Type> parameters = new ArrayList<>();
-		parameters.add(target);
-		LowLevel.Type.Method type = visitor.visitTypeMethod(parameters, actual);
-		ArrayList<E> arguments = new ArrayList<>();
-		arguments.add(expr);
-		return visitor.visitDirectInvocation(type, name, arguments);
+	public E applyArrayCoercion(Type.Array target, Type.Array actual, E expr) {
+		String name = "coercion$" + coercionIndex;
+		D body = constructArrayArrayCoercion(name,target,actual);
+		return constructCoercionMethod(target,actual,expr,body);
 	}
 
 	public D constructArrayArrayCoercion(String name, Type.Array target, Type.Array actual) {
@@ -1898,7 +1907,33 @@ public class LowLevelDriver<D, S, E extends S> {
 	}
 
 	public E applyRecordCoercion(Type.Record target, Type.Record actual, E expr) {
-		throw new RuntimeException("implement me!");
+		String name = "coercion$" + coercionIndex;
+		D body = constructRecordRecordCoercion(name,target,actual);
+		return constructCoercionMethod(target,actual,expr,body);
+	}
+
+	public D constructRecordRecordCoercion(String name, Type.Record target, Type.Record actual) {
+		LowLevel.Type.Record llTarget = visitRecord(target);
+		LowLevel.Type.Record llActual = visitRecord(actual);
+		E parameter = visitor.visitVariableAccess(llActual, "x");
+		ArrayList<S> body = new ArrayList<>();
+		//
+		Tuple<Decl.Variable> fields = target.getFields();
+		ArrayList<E> operands = new ArrayList<>();
+		for (int i = 0; i != fields.size(); ++i) {
+			Decl.Variable field = fields.get(i);
+			LowLevel.Type targetType = visitType(field.getType());
+			E initialiser = visitor.visitRecordAccess(llActual, parameter, field.getName().toString());
+			body.add(visitor.visitVariableDeclaration(targetType, "f" + i, initialiser));
+			operands.add(visitor.visitVariableAccess(targetType, "f" + i));
+		}
+		//
+		E rval = visitor.visitRecordInitialiser(llTarget, operands);
+		body.add(visitor.visitReturn(rval));
+		//
+		ArrayList<Pair<LowLevel.Type, String>> parameters = new ArrayList<>();
+		parameters.add(new Pair<>(llActual, "x"));
+		return visitor.visitMethod(name, parameters, llTarget, body);
 	}
 
 	public E applyReferenceCoercion(Type.Reference target, Type.Reference actual, E expr) {
@@ -1925,15 +1960,9 @@ public class LowLevelDriver<D, S, E extends S> {
 
 	public E applyUnionCoercion(Type.Union target, Type.Union actual, E expr) {
 		// Construct coercion method
-		String name = "coercion$" + coercionIndex++;
-		auxillaries.add(constructUnionUnionCoercion(name,target,actual));
-		// Construct invocation to coercion method
-		List<E> arguments = new ArrayList<>();
-		arguments.add(expr);
-		List<LowLevel.Type> parameterTypes = new ArrayList<>();
-		parameterTypes.add(visitType(actual));
-		LowLevel.Type.Method type = visitor.visitTypeMethod(parameterTypes, visitType(target));
-		return visitor.visitDirectInvocation(type, name, arguments);
+		String name = "coercion$" + coercionIndex;
+		D body = constructUnionUnionCoercion(name,target,actual);
+		return constructCoercionMethod(target,actual,expr,body);
 	}
 
 	public D constructUnionUnionCoercion(String name, Type.Union target, Type.Union actual) {
@@ -1970,6 +1999,20 @@ public class LowLevelDriver<D, S, E extends S> {
 		LowLevel.Type.Union llActual = visitUnion(actual);
 		return visitor.visitUnionLeave(llActual, tag, expr);
 	}
+
+	public E constructCoercionMethod(Type target, Type actual, E expr, D body) {
+		// Construct coercion method
+		String name = "coercion$" + coercionIndex++;
+		auxillaries.add(body);
+		// Construct invocation to coercion method
+		List<E> arguments = new ArrayList<>();
+		arguments.add(expr);
+		List<LowLevel.Type> parameterTypes = new ArrayList<>();
+		parameterTypes.add(visitType(actual));
+		LowLevel.Type.Method type = visitor.visitTypeMethod(parameterTypes, visitType(target));
+		return visitor.visitDirectInvocation(type, name, arguments);
+	}
+
 	// ==========================================================================
 	// Type
 	// ==========================================================================
@@ -2206,8 +2249,8 @@ public class LowLevelDriver<D, S, E extends S> {
 				List<E> arguments = new ArrayList<>();
 				arguments.add(visitor.visitVariableAccess(parameter, "x"));
 				result = visitor.visitLogicalAnd(result, visitor.visitDirectInvocation(type, name, arguments));
-				stmts.add(visitor.visitReturn(result));
 			}
+			stmts.add(visitor.visitReturn(result));
 			return stmts;
 		} catch (ResolutionError e) {
 			throw new RuntimeException(e);
@@ -2591,7 +2634,19 @@ public class LowLevelDriver<D, S, E extends S> {
 				Type.Nominal type = (Type.Nominal) target;
 				WhileyFile.Decl.Type decl = typeSystem.resolveExactly(type.getName(), WhileyFile.Decl.Type.class);
 				return extractTargetIntegerType(decl.getType(), actual);
-			} else {
+			} else if (target instanceof Type.Intersection) {
+				Type.Intersection type = (Type.Intersection) target;
+				Type.Int result = null;
+				for(int i=0;i!=type.size();++i) {
+					Type.Int t = extractTargetIntegerType(type.get(i), actual);
+					// FIXME: at this point, we might need to merge integers of different width
+					// properly.
+					if(result == null) {
+						result = t;
+					}
+				}
+				return result;
+			}else {
 				throw new UnsupportedOperationException(
 						"implement target integer extraction (" + target + "<=" + actual + ")");
 			}

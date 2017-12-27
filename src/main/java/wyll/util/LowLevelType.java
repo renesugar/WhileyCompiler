@@ -190,6 +190,21 @@ public abstract class LowLevelType implements LowLevel.Type {
 		public Type getReturnType() {
 			return returns;
 		}
+	}
+
+	public static class Recursive extends LowLevelType implements Type.Recursive {
+
+		@Override
+		public int getWidth() {
+			// TODO Auto-generated method stub
+			return 0;
+		}
+
+		@Override
+		public String getName() {
+			// TODO Auto-generated method stub
+			return null;
+		}
 
 	}
 }
