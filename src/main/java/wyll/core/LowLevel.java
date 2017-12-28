@@ -164,6 +164,8 @@ public class LowLevel {
 
 		public E visitReferenceInitialiser(Type.Reference type, E operand);
 
+		public E visitReferenceAccess(Type.Reference type, E operand);
+
 		// ===================================================
 		// Union Expressions
 		// ===================================================

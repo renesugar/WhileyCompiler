@@ -5,8 +5,10 @@ import static wyc.lang.WhileyFile.*;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import wybs.lang.NameResolver;
@@ -14,6 +16,7 @@ import wybs.lang.NameResolver.ResolutionError;
 import wybs.util.AbstractCompilationUnit.Identifier;
 import wybs.util.AbstractCompilationUnit.Tuple;
 import wybs.util.AbstractCompilationUnit.Value;
+import wyc.check.FlowTypeCheck.Environment;
 import wyc.lang.WhileyFile;
 import wyc.lang.WhileyFile.Decl;
 import wyc.lang.WhileyFile.Expr;
@@ -21,8 +24,10 @@ import wyc.lang.WhileyFile.LVal;
 import wyc.lang.WhileyFile.Stmt;
 import wyc.lang.WhileyFile.Type;
 import wyc.util.AbstractVisitor;
+import wycc.util.ArrayUtils;
 import wycc.util.Pair;
 import wyil.type.TypeSystem;
+import wyil.type.SubtypeOperator.LifetimeRelation;
 import wyll.task.TypeMangler;
 import wyll.util.StdTypeMangler;
 
@@ -53,7 +58,7 @@ public class LowLevelDriver<D, S, E extends S> {
 				declarations.add(d);
 			}
 		}
-		constructRuntimeTypeTests();
+		constructRuntimeTypeTests(new Environment());
 		declarations.addAll(auxillaries);
 		return declarations;
 	}
@@ -89,7 +94,10 @@ public class LowLevelDriver<D, S, E extends S> {
 		E initialiser = null;
 		LowLevel.Type type = visitType(decl.getType());
 		if (decl.hasInitialiser()) {
-			initialiser = visitExpression(decl.getInitialiser(), decl.getType());
+			// Construct initial environment
+			Environment environment = new Environment();
+			// Translate initialiser
+			initialiser = visitExpression(decl.getInitialiser(), decl.getType(), environment);
 		}
 		return visitor.visitStaticVariable(decl.getName().toString(), type, initialiser);
 	}
@@ -103,6 +111,8 @@ public class LowLevelDriver<D, S, E extends S> {
 	}
 
 	public D createInvariantMethod(Decl.Type decl) {
+		// Construct initial environment
+		Environment environment = new Environment();
 		Tuple<Expr> invariant = decl.getInvariant();
 		String name = decl.getName().toString() + "$inv";
 		LowLevel.Type paramT = visitType(decl.getType());
@@ -110,14 +120,14 @@ public class LowLevelDriver<D, S, E extends S> {
 		ArrayList<S> body = new ArrayList<>();
 		if (invariant.size() == 1) {
 			// Simple case: just evaluate and return invariant
-			body.add(visitor.visitReturn(visitExpression(invariant.get(0), Type.Bool)));
+			body.add(visitor.visitReturn(visitExpression(invariant.get(0), Type.Bool, environment)));
 		} else {
 			// Complex case: evaluate each clause in turn
 			String var = createTemporaryVariable(decl.getIndex());
 			body.add(visitor.visitVariableDeclaration(varT, var, visitor.visitLogicalInitialiser(true)));
 			for (int i = 0; i != invariant.size(); ++i) {
 				E lhs = visitor.visitVariableAccess(varT, var);
-				E rhs = visitExpression(invariant.get(i), Type.Bool);
+				E rhs = visitExpression(invariant.get(i), Type.Bool, environment);
 				rhs = visitor.visitLogicalAnd(lhs, rhs);
 				body.add(visitor.visitAssign(lhs, rhs));
 			}
@@ -129,6 +139,10 @@ public class LowLevelDriver<D, S, E extends S> {
 	}
 
 	public D visitCallable(Decl.Callable decl) {
+		// Construct initial environment
+		Environment environment = new Environment();
+		// Update environment so this within declared lifetimes
+		environment = declareThisWithin(decl, environment);
 		// Determine appropriate name mangle
 		String name = getMangledName(decl);
 		// Construct parameter list
@@ -146,7 +160,7 @@ public class LowLevelDriver<D, S, E extends S> {
 		if (decl instanceof Decl.FunctionOrMethod) {
 			Decl.FunctionOrMethod fm = (Decl.FunctionOrMethod) decl;
 			// Done!!
-			List<S> body = visitStatement(fm.getBody());
+			List<S> body = visitStatement(fm.getBody(),environment);
 			return visitor.visitMethod(name, nParameters, retType, body);
 		} else {
 			Decl.Property property = (Decl.Property) decl;
@@ -157,7 +171,7 @@ public class LowLevelDriver<D, S, E extends S> {
 			body.add(visitor.visitVariableDeclaration(varT, var, visitor.visitLogicalInitialiser(true)));
 			for (int i = 0; i != invariant.size(); ++i) {
 				E lhs = visitor.visitVariableAccess(varT, var);
-				E rhs = visitExpression(invariant.get(i), Type.Bool);
+				E rhs = visitExpression(invariant.get(i), Type.Bool, environment);
 				rhs = visitor.visitLogicalAnd(lhs, rhs);
 				body.add(visitor.visitAssign(lhs, rhs));
 			}
@@ -166,20 +180,38 @@ public class LowLevelDriver<D, S, E extends S> {
 		}
 	}
 
+
+	/**
+	 * Update the environment to reflect the fact that the special "this" lifetime
+	 * is contained within all declared lifetime parameters. Observe that this only
+	 * makes sense if the enclosing declaration is for a method.
+	 *
+	 * @param decl
+	 * @param environment
+	 * @return
+	 */
+	public Environment declareThisWithin(Decl.Callable decl, Environment environment) {
+		if (decl instanceof Decl.Method) {
+			Decl.Method method = (Decl.Method) decl;
+			environment = environment.declareWithin("this", method.getLifetimes());
+		}
+		return environment;
+	}
+
 	// ==========================================================================
 	// Statements
 	// ==========================================================================
 
-	public List<S> visitStatement(Stmt stmt) {
+	public List<S> visitStatement(Stmt stmt, Environment environment) {
 		switch (stmt.getOpcode()) {
 		case STMT_assign:
-			return visitAssign((Stmt.Assign) stmt);
+			return visitAssign((Stmt.Assign) stmt, environment);
 		case STMT_block:
-			return visitBlock((Stmt.Block) stmt);
+			return visitBlock((Stmt.Block) stmt, environment);
 		case STMT_namedblock:
-			return visitNamedBlock((Stmt.NamedBlock) stmt);
+			return visitNamedBlock((Stmt.NamedBlock) stmt, environment);
 		default: {
-			S s = visitUnitStatement(stmt);
+			S s = visitUnitStatement(stmt, environment);
 			if (s == null) {
 				return Collections.EMPTY_LIST;
 			} else {
@@ -198,75 +230,75 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param stmt
 	 * @return
 	 */
-	public S visitUnitStatement(Stmt stmt) {
+	public S visitUnitStatement(Stmt stmt, Environment environment) {
 		switch (stmt.getOpcode()) {
 		case DECL_variable:
 		case DECL_variableinitialiser:
-			return visitVariable((Decl.Variable) stmt);
+			return visitVariable((Decl.Variable) stmt, environment);
 		case STMT_assert:
-			return visitAssert((Stmt.Assert) stmt);
+			return visitAssert((Stmt.Assert) stmt, environment);
 		case STMT_assume:
-			return visitAssume((Stmt.Assume) stmt);
+			return visitAssume((Stmt.Assume) stmt, environment);
 		case STMT_break:
-			return visitBreak((Stmt.Break) stmt);
+			return visitBreak((Stmt.Break) stmt, environment);
 		case STMT_continue:
-			return visitContinue((Stmt.Continue) stmt);
+			return visitContinue((Stmt.Continue) stmt, environment);
 		case STMT_debug:
-			return visitDebug((Stmt.Debug) stmt);
+			return visitDebug((Stmt.Debug) stmt, environment);
 		case STMT_dowhile:
-			return visitDoWhile((Stmt.DoWhile) stmt);
+			return visitDoWhile((Stmt.DoWhile) stmt, environment);
 		case STMT_fail:
-			return visitFail((Stmt.Fail) stmt);
+			return visitFail((Stmt.Fail) stmt, environment);
 		case STMT_if:
 		case STMT_ifelse:
-			return visitIfElse((Stmt.IfElse) stmt);
+			return visitIfElse((Stmt.IfElse) stmt, environment);
 		case EXPR_invoke: {
 			Expr.Invoke ivk = (Expr.Invoke) stmt;
-			return visitInvoke(ivk, ivk.getType());
+			return visitInvoke(ivk, Type.Void, environment);
 		}
 		case EXPR_indirectinvoke: {
 			Expr.IndirectInvoke ivk = (Expr.IndirectInvoke) stmt;
-			return visitIndirectInvoke(ivk, ivk.getType());
+			return visitIndirectInvoke(ivk, ivk.getType(), environment);
 		}
 		case STMT_return:
-			return visitReturn((Stmt.Return) stmt);
+			return visitReturn((Stmt.Return) stmt, environment);
 		case STMT_skip:
-			return visitSkip((Stmt.Skip) stmt);
+			return visitSkip((Stmt.Skip) stmt, environment);
 		case STMT_switch:
-			return visitSwitch((Stmt.Switch) stmt);
+			return visitSwitch((Stmt.Switch) stmt, environment);
 		case STMT_while:
-			return visitWhile((Stmt.While) stmt);
+			return visitWhile((Stmt.While) stmt, environment);
 		default:
 			throw new IllegalArgumentException("unknown statement encountered (" + stmt.getClass().getName() + ")");
 		}
 	}
 
-	public S visitVariable(Decl.Variable stmt) {
+	public S visitVariable(Decl.Variable stmt, Environment environment) {
 		LowLevel.Type type = visitType(stmt.getType());
 		E initialiser = null;
 		if (stmt.hasInitialiser()) {
-			initialiser = visitExpression(stmt.getInitialiser(), stmt.getType());
+			initialiser = visitExpression(stmt.getInitialiser(), stmt.getType(), environment);
 		}
 		return visitor.visitVariableDeclaration(type, stmt.getName().toString(), initialiser);
 	}
 
-	public S visitAssert(Stmt.Assert stmt) {
-		E condition = visitExpression(stmt.getCondition(), Type.Bool);
+	public S visitAssert(Stmt.Assert stmt, Environment environment) {
+		E condition = visitExpression(stmt.getCondition(), Type.Bool, environment);
 		return visitor.visitAssert(condition);
 	}
 
-	public S visitAssume(Stmt.Assume stmt) {
-		E condition = visitExpression(stmt.getCondition(), Type.Bool);
+	public S visitAssume(Stmt.Assume stmt, Environment environment) {
+		E condition = visitExpression(stmt.getCondition(), Type.Bool, environment);
 		return visitor.visitAssert(condition);
 	}
 
-	public List<S> visitAssign(Stmt.Assign stmt) {
+	public List<S> visitAssign(Stmt.Assign stmt, Environment environment) {
 		// Check whether or not we have to resort to a more complex translation of the
 		// assignment statement.
 		if (hasMultipleExpression(stmt) || hasInterference(stmt)) {
-			return translateComplexAssign(stmt);
+			return translateComplexAssign(stmt, environment);
 		} else {
-			return translateSimpleAssign(stmt);
+			return translateSimpleAssign(stmt, environment);
 		}
 	}
 
@@ -290,7 +322,7 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * Such a translation offers the simplest and cleanest representation of the
 	 * original code. But, it is only safe with the right conditions.
 	 */
-	public List<S> translateSimpleAssign(Stmt.Assign stmt) {
+	public List<S> translateSimpleAssign(Stmt.Assign stmt, Environment environment) {
 		// ASSERT: |lvals| == |rvals|
 		Tuple<LVal> lvals = stmt.getLeftHandSide();
 		Tuple<Expr> rvals = stmt.getRightHandSide();
@@ -298,8 +330,8 @@ public class LowLevelDriver<D, S, E extends S> {
 		//
 		for (int i = 0; i != lvals.size(); ++i) {
 			LVal lval = lvals.get(i);
-			E lhs = visitExpression(lval, lval.getType());
-			E rhs = visitExpression(rvals.get(i), lval.getType());
+			E lhs = visitLVal(lval, environment);
+			E rhs = visitExpression(rvals.get(i), lval.getType(), environment);
 			stmts.add(visitor.visitAssign(lhs, rhs));
 		}
 		//
@@ -383,7 +415,7 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param context
 	 * @return
 	 */
-	public List<S> translateComplexAssign(Stmt.Assign stmt) {
+	public List<S> translateComplexAssign(Stmt.Assign stmt, Environment environment) {
 		Tuple<LVal> lhs = stmt.getLeftHandSide();
 		Tuple<Expr> rhs = stmt.getRightHandSide();
 		ArrayList<S> stmts = new ArrayList<>();
@@ -401,10 +433,10 @@ public class LowLevelDriver<D, S, E extends S> {
 			// Determine appropriate type for variable and translate initialiser.
 			if (rval.getTypes() == null) {
 				temporaryTypes[i] = rval.getType();
-				initialiser = visitExpression(rval, rval.getType());
+				initialiser = visitExpression(rval, rval.getType(), environment);
 			} else {
 				temporaryTypes[i] = getMultipleReturnType(rval.getTypes());
-				initialiser = visitMultipleExpression(rval, rval.getTypes());
+				initialiser = visitMultipleExpression(rval, rval.getTypes(), environment);
 			}
 			LowLevel.Type temporaryType = visitType(temporaryTypes[i]);
 			stmts.add(visitor.visitVariableDeclaration(temporaryType, temporaryVars[i], initialiser));
@@ -421,10 +453,10 @@ public class LowLevelDriver<D, S, E extends S> {
 			if (rhsTypes == null) {
 				// Easy case for single assignments
 				Expr lv = lhs.get(j++);
-				E lval = visitExpression(lv, lv.getType());
+				E lval = visitExpression(lv, lv.getType(), environment);
 				E rval = visitor.visitVariableAccess(llTemporaryType, temporaryVar);
 				// Apply any coercions required of the assignment.
-				rval = applyCoercion(lv.getType(), temporaryType, rval);
+				rval = applyCoercion(lv.getType(), temporaryType, rval, environment);
 				stmts.add(visitor.visitAssign(lval, rval));
 			} else {
 				// Harder case for multiple assignments. First, store return value into
@@ -433,11 +465,11 @@ public class LowLevelDriver<D, S, E extends S> {
 				LowLevel.Type.Record llRecT = (LowLevel.Type.Record) llTemporaryType;
 				for (int k = 0; k != rhsTypes.size(); ++k) {
 					Expr lv = lhs.get(j++);
-					E lval = visitExpression(lv, lv.getType());
+					E lval = visitExpression(lv, lv.getType(), environment);
 					E rval = visitor.visitVariableAccess(llTemporaryType, temporaryVar);
 					rval = visitor.visitRecordAccess(llRecT, rval, "f" + k);
 					// Apply any coercions required of the assignment.
-					rval = applyCoercion(lv.getType(), rhsTypes.get(k), rval);
+					rval = applyCoercion(lv.getType(), rhsTypes.get(k), rval, environment);
 					stmts.add(visitor.visitAssign(lval, rval));
 				}
 			}
@@ -548,23 +580,23 @@ public class LowLevelDriver<D, S, E extends S> {
 		}
 	}
 
-	public List<S> visitBlock(Stmt.Block stmt) {
+	public List<S> visitBlock(Stmt.Block stmt, Environment environment) {
 		ArrayList<S> block = new ArrayList<>();
 		for (int i = 0; i != stmt.size(); ++i) {
-			block.addAll(visitStatement(stmt.get(i)));
+			block.addAll(visitStatement(stmt.get(i),environment));
 		}
 		return block;
 	}
 
-	public S visitBreak(Stmt.Break stmt) {
+	public S visitBreak(Stmt.Break stmt, Environment environment) {
 		return visitor.visitBreak();
 	}
 
-	public S visitContinue(Stmt.Continue stmt) {
+	public S visitContinue(Stmt.Continue stmt, Environment environment) {
 		return visitor.visitContinue();
 	}
 
-	public S visitDebug(Stmt.Debug stmt) {
+	public S visitDebug(Stmt.Debug stmt, Environment environment) {
 		return null;
 	}
 
@@ -575,36 +607,36 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param stmt
 	 * @return
 	 */
-	public S visitDoWhile(Stmt.DoWhile stmt) {
-		E condition = visitExpression(stmt.getCondition(), Type.Bool);
+	public S visitDoWhile(Stmt.DoWhile stmt, Environment environment) {
+		E condition = visitExpression(stmt.getCondition(), Type.Bool, environment);
 		Stmt.Block block = stmt.getBody();
 		ArrayList<S> body = new ArrayList<>();
 		for (int i = 0; i != block.size(); ++i) {
-			body.addAll(visitStatement(block.get(i)));
+			body.addAll(visitStatement(block.get(i),environment));
 		}
 		return visitor.visitDoWhile(condition, body);
 	}
 
-	public S visitFail(Stmt.Fail stmt) {
-		return null;
+	public S visitFail(Stmt.Fail stmt, Environment environment) {
+		return visitor.visitAssert(visitor.visitLogicalInitialiser(false));
 	}
 
-	public S visitIfElse(Stmt.IfElse stmt) {
+	public S visitIfElse(Stmt.IfElse stmt, Environment environment) {
 		List<wycc.util.Pair<E, List<S>>> branches = new ArrayList<>();
 		// First, translate true branch
-		E condition = visitExpression(stmt.getCondition(), Type.Bool);
-		List<S> trueBranch = visitBlock(stmt.getTrueBranch());
+		E condition = visitExpression(stmt.getCondition(), Type.Bool, environment);
+		List<S> trueBranch = visitBlock(stmt.getTrueBranch(),environment);
 		branches.add(new wycc.util.Pair<>(condition, trueBranch));
 		// Second, translate false branch (if applicable)
 		if (stmt.hasFalseBranch()) {
-			List<S> falseBranch = visitBlock(stmt.getFalseBranch());
+			List<S> falseBranch = visitBlock(stmt.getFalseBranch(),environment);
 			branches.add(new wycc.util.Pair<>(null, falseBranch));
 		}
 		// Done
 		return visitor.visitIfElse(branches);
 	}
 
-	public List<S> visitNamedBlock(Stmt.NamedBlock stmt) {
+	public List<S> visitNamedBlock(Stmt.NamedBlock stmt, Environment environment) {
 		return null;
 	}
 
@@ -641,7 +673,7 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param stmt
 	 * @return
 	 */
-	public S visitReturn(Stmt.Return stmt) {
+	public S visitReturn(Stmt.Return stmt, Environment environment) {
 		// FIXME: this will be broken in the case of a method call or other
 		// side-effecting operation. The reason being that we may end up duplicating the
 		// lhs. When the time comes, we can fix this by introducing an assignment
@@ -653,7 +685,7 @@ public class LowLevelDriver<D, S, E extends S> {
 		Decl.FunctionOrMethod parent = stmt.getAncestor(Decl.FunctionOrMethod.class);
 		Tuple<Type> targets = parent.getType().getReturns();
 		if (targets.size() == 1) {
-			rval = visitExpression(returns.get(0), targets.get(0));
+			rval = visitExpression(returns.get(0), targets.get(0), environment);
 		} else if (targets.size() > 1) {
 			// FIXME: I think this is also broken in the case of mutliple return
 			// expressions.
@@ -663,7 +695,7 @@ public class LowLevelDriver<D, S, E extends S> {
 			ArrayList<E> results = new ArrayList<>();
 			for (int i = 0; i != fields.length; ++i) {
 				fields[i] = new Identifier("f" + i);
-				results.add(visitExpression(returns.get(i), targets.get(i)));
+				results.add(visitExpression(returns.get(i), targets.get(i), environment));
 			}
 			rval = visitor.visitRecordInitialiser(llType, results);
 		}
@@ -682,14 +714,14 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param stmt
 	 * @return
 	 */
-	public S visitSwitch(Stmt.Switch stmt) {
-		E condition = visitExpression(stmt.getCondition(), Type.Int);
+	public S visitSwitch(Stmt.Switch stmt, Environment environment) {
+		E condition = visitExpression(stmt.getCondition(), Type.Int, environment);
 		List<wycc.util.Pair<Integer, List<S>>> branches = new ArrayList<>();
 		Tuple<Stmt.Case> cases = stmt.getCases();
 		for (int i = 0; i != cases.size(); ++i) {
 			Stmt.Case cAse = cases.get(i);
 			Tuple<Expr> conditions = cAse.getConditions();
-			List<S> body = visitBlock(cAse.getBlock());
+			List<S> body = visitBlock(cAse.getBlock(), environment);
 			if (cAse.isDefault()) {
 				branches.add(new wycc.util.Pair<>(null, new ArrayList<>(body)));
 			} else {
@@ -697,7 +729,7 @@ public class LowLevelDriver<D, S, E extends S> {
 					Integer constant = extractIntegerConstant(conditions.get(j));
 					if (constant == null) {
 						// FIXME: handle this case
-						return visitSwitchChain(stmt);
+						return visitSwitchChain(stmt, environment);
 					}
 					branches.add(new wycc.util.Pair<>(constant, new ArrayList<>(body)));
 				}
@@ -706,19 +738,19 @@ public class LowLevelDriver<D, S, E extends S> {
 		return visitor.visitSwitch(condition, branches);
 	}
 
-	public S visitSwitchChain(Stmt.Switch stmt) {
+	public S visitSwitchChain(Stmt.Switch stmt, Environment environment) {
 		Type lhsT = stmt.getCondition().getType();
 		LowLevel.Type llLhsT = visitType(lhsT);
-		E lhs = visitExpression(stmt.getCondition(), lhsT);
+		E lhs = visitExpression(stmt.getCondition(), lhsT, environment);
 		List<wycc.util.Pair<E, List<S>>> branches = new ArrayList<>();
 		Tuple<Stmt.Case> cases = stmt.getCases();
 		for (int i = 0; i != cases.size(); ++i) {
 			Stmt.Case cAse = cases.get(i);
 			Tuple<Expr> conditions = cAse.getConditions();
-			List<S> body = visitBlock(cAse.getBlock());
+			List<S> body = visitBlock(cAse.getBlock(),environment);
 			for (int j = 0; j != conditions.size(); ++j) {
 				Expr e = conditions.get(j);
-				E rhs = visitExpression(e, e.getType());
+				E rhs = visitExpression(e, e.getType(), environment);
 				LowLevel.Type llRhsT = visitType(e.getType());
 				E condition = visitor.visitEqual(llLhsT, llRhsT, lhs, rhs);
 				branches.add(new wycc.util.Pair<>(condition, new ArrayList<>(body)));
@@ -727,7 +759,7 @@ public class LowLevelDriver<D, S, E extends S> {
 		return visitor.visitIfElse(branches);
 	}
 
-	public S visitSkip(Stmt.Skip stmt) {
+	public S visitSkip(Stmt.Skip stmt, Environment environment) {
 		return null;
 	}
 
@@ -738,14 +770,70 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param stmt
 	 * @return
 	 */
-	public S visitWhile(Stmt.While stmt) {
-		E condition = visitExpression(stmt.getCondition(), Type.Bool);
+	public S visitWhile(Stmt.While stmt, Environment environment) {
+		E condition = visitExpression(stmt.getCondition(), Type.Bool, environment);
 		Stmt.Block block = stmt.getBody();
 		ArrayList<S> body = new ArrayList<>();
 		for (int i = 0; i != block.size(); ++i) {
-			body.addAll(visitStatement(block.get(i)));
+			body.addAll(visitStatement(block.get(i),environment));
 		}
 		return visitor.visitWhile(condition, body);
+	}
+
+	// ==========================================================================
+	// LVals
+	// ==========================================================================
+
+	/**
+	 * Visit an LVal expression. That is, an expression which may appear on the
+	 * left-hand side of an assignment. Such expressions require careful attention
+	 * in some cases. For example, consider this assignment:
+	 *
+	 * <pre>
+	 * type nint is null|int
+	 * type nbool is null|bool
+	 * type arr_t is (nint[])|(nbool[])
+	 *
+	 * function f(arr_t xs) -> arr_t:
+	 *    //
+	 *    xs[0] = null
+	 *    return xs
+	 * </pre>
+	 *
+	 * This should effectively be viewed as follows:
+	 *
+	 * <pre>
+	 *function f(arr_t xs) -> arr_t:
+	 *    //
+	 *    if xs is nint[]:
+	 *       xs[0] = null
+	 *    else:
+	 *       xs[0] = null
+	 *    return xs
+	 * </pre>
+	 *
+	 * In this case, both assignments now have lval's with array type and can be
+	 * translated down to concrete low-level array assignments.
+	 *
+	 * @param lval
+	 * @param target
+	 * @return
+	 */
+	public E visitLVal(LVal lval, Environment environment) {
+		switch(lval.getOpcode()) {
+		case EXPR_dereference:
+			return visitDereferenceLVal((Expr.Dereference) lval, environment);
+		default:
+			return visitExpression(lval,lval.getType(), environment);
+		}
+	}
+
+	public E visitDereferenceLVal(Expr.Dereference lval, Environment environment) {
+		// FIXME: need to handle effective reference assignments
+		Type.Reference type = (Type.Reference) lval.getOperand().getType();
+		LowLevel.Type.Reference llType = visitReference(type);
+		E operand = visitExpression(lval.getOperand(), type, environment);
+		return visitor.visitReferenceAccess(llType,operand);
 	}
 
 	// ==========================================================================
@@ -777,7 +865,7 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param targets
 	 * @return
 	 */
-	public E visitMultipleExpression(Expr expr, Tuple<Type> targets) {
+	public E visitMultipleExpression(Expr expr, Tuple<Type> targets, Environment environment) {
 		Type type;
 		if (targets.size() == 1) {
 			// Standard case, no multiple return required.
@@ -786,7 +874,7 @@ public class LowLevelDriver<D, S, E extends S> {
 			// Complex case, multiple return is required.
 			type = getMultipleReturnType(targets);
 		}
-		return visitExpression(expr, type);
+		return visitExpression(expr, type, environment);
 	}
 
 	/**
@@ -801,11 +889,11 @@ public class LowLevelDriver<D, S, E extends S> {
 	 *            number of expressions.
 	 * @return
 	 */
-	public List<E> visitExpressions(Tuple<Expr> exprs, Tuple<Type> targets) {
+	public List<E> visitExpressions(Tuple<Expr> exprs, Tuple<Type> targets, Environment environment) {
 		// REQUIRES exprs.size() == targets.size();
 		ArrayList<E> result = new ArrayList<>();
 		for (int i = 0; i != exprs.size(); ++i) {
-			result.add(visitExpression(exprs.get(i), targets.get(i)));
+			result.add(visitExpression(exprs.get(i), targets.get(i), environment));
 		}
 		return result;
 	}
@@ -822,11 +910,11 @@ public class LowLevelDriver<D, S, E extends S> {
 	 *            number of expressions.
 	 * @return
 	 */
-	public List<E> visitExpressions(Tuple<Expr> exprs, Type target) {
+	public List<E> visitExpressions(Tuple<Expr> exprs, Type target, Environment environment) {
 		// REQUIRES exprs.size() == targets.size();
 		ArrayList<E> result = new ArrayList<>();
 		for (int i = 0; i != exprs.size(); ++i) {
-			result.add(visitExpression(exprs.get(i), target));
+			result.add(visitExpression(exprs.get(i), target, environment));
 		}
 		return result;
 	}
@@ -854,82 +942,82 @@ public class LowLevelDriver<D, S, E extends S> {
 	 *            coercions should be inserted to ensure this is the case.
 	 * @return
 	 */
-	public E visitExpression(Expr expr, Type target) {
+	public E visitExpression(Expr expr, Type target, Environment environment) {
 		switch (expr.getOpcode()) {
 		case EXPR_arraygenerator:
-			return visitArrayGenerator((Expr.ArrayGenerator) expr, target);
+			return visitArrayGenerator((Expr.ArrayGenerator) expr, target, environment);
 		case EXPR_arrayinitialiser:
-			return visitArrayInitialiser((Expr.ArrayInitialiser) expr, target);
+			return visitArrayInitialiser((Expr.ArrayInitialiser) expr, target, environment);
 		case EXPR_arrayaccess:
 		case EXPR_arrayborrow:
-			return visitArrayAccess((Expr.ArrayAccess) expr, target);
+			return visitArrayAccess((Expr.ArrayAccess) expr, target, environment);
 		case EXPR_arraylength:
-			return visitArrayLength((Expr.ArrayLength) expr, target);
+			return visitArrayLength((Expr.ArrayLength) expr, target, environment);
 		case EXPR_bitwisenot:
-			return visitBitwiseComplement((Expr.BitwiseComplement) expr, target);
+			return visitBitwiseComplement((Expr.BitwiseComplement) expr, target, environment);
 		case EXPR_bitwiseand:
 		case EXPR_bitwiseor:
 		case EXPR_bitwisexor:
-			return visitBitwiseNaryOperator((Expr.NaryOperator) expr, target);
+			return visitBitwiseNaryOperator((Expr.NaryOperator) expr, target, environment);
 		case EXPR_bitwiseshl:
 		case EXPR_bitwiseshr:
-			return visitBitwiseShiftOperator((Expr.BinaryOperator) expr, target);
+			return visitBitwiseShiftOperator((Expr.BinaryOperator) expr, target, environment);
 		case EXPR_cast:
-			return visitCast((Expr.Cast) expr, target);
+			return visitCast((Expr.Cast) expr, target, environment);
 		case EXPR_constant:
-			return visitConstantInitialiser((Expr.Constant) expr, target);
+			return visitConstantInitialiser((Expr.Constant) expr, target, environment);
 		case EXPR_dereference:
-			return visitDereference((Expr.Dereference) expr, target);
+			return visitDereference((Expr.Dereference) expr, target, environment);
 		case EXPR_equal:
 		case EXPR_notequal:
-			return visitEquality((Expr.BinaryOperator) expr, target);
+			return visitEquality((Expr.BinaryOperator) expr, target, environment);
 		case EXPR_integerlessthan:
 		case EXPR_integerlessequal:
 		case EXPR_integergreaterthan:
 		case EXPR_integergreaterequal:
-			return visitIntegerComparator((Expr.BinaryOperator) expr, target);
+			return visitIntegerComparator((Expr.BinaryOperator) expr, target, environment);
 		case EXPR_integernegation:
-			return visitIntegerNegation((Expr.IntegerNegation) expr, target);
+			return visitIntegerNegation((Expr.IntegerNegation) expr, target, environment);
 		case EXPR_integeraddition:
 		case EXPR_integersubtraction:
 		case EXPR_integermultiplication:
 		case EXPR_integerdivision:
 		case EXPR_integerremainder:
-			return visitIntegerOperator((Expr.BinaryOperator) expr, target);
+			return visitIntegerOperator((Expr.BinaryOperator) expr, target, environment);
 		case EXPR_indirectinvoke:
-			return visitIndirectInvoke((Expr.IndirectInvoke) expr, target);
+			return visitIndirectInvoke((Expr.IndirectInvoke) expr, target, environment);
 		case EXPR_invoke:
-			return visitInvoke((Expr.Invoke) expr, target);
+			return visitInvoke((Expr.Invoke) expr, target, environment);
 		case EXPR_is:
-			return visitIs((Expr.Is) expr);
+			return visitIs((Expr.Is) expr, environment);
 		case DECL_lambda:
-			return visitLambda((Decl.Lambda) expr, target);
+			return visitLambda((Decl.Lambda) expr, target, environment);
 		case EXPR_lambdaaccess:
-			return visitLambdaAccess((Expr.LambdaAccess) expr, target);
+			return visitLambdaAccess((Expr.LambdaAccess) expr, target, environment);
 		case EXPR_logicalnot:
-			return visitLogicalNot((Expr.LogicalNot) expr);
+			return visitLogicalNot((Expr.LogicalNot) expr, environment);
 		case EXPR_logiaclimplication:
 		case EXPR_logicaliff:
-			return visitLogicalBinaryOperator((Expr.BinaryOperator) expr);
+			return visitLogicalBinaryOperator((Expr.BinaryOperator) expr, environment);
 		case EXPR_logicaland:
 		case EXPR_logicalor:
-			return visitLogicalNaryOperator((Expr.NaryOperator) expr);
+			return visitLogicalNaryOperator((Expr.NaryOperator) expr, environment);
 		case EXPR_logicalexistential:
 		case EXPR_logicaluniversal:
-			return visitQuantifier((Expr.Quantifier) expr);
+			return visitQuantifier((Expr.Quantifier) expr, environment);
 		case EXPR_recordaccess:
 		case EXPR_recordborrow:
-			return visitRecordAccess((Expr.RecordAccess) expr, target);
+			return visitRecordAccess((Expr.RecordAccess) expr, target, environment);
 		case EXPR_recordinitialiser:
-			return visitRecordInitialiser((Expr.RecordInitialiser) expr, target);
+			return visitRecordInitialiser((Expr.RecordInitialiser) expr, target, environment);
 		case EXPR_staticvariable:
-			return visitStaticVariableAccess((Expr.StaticVariableAccess) expr, target);
+			return visitStaticVariableAccess((Expr.StaticVariableAccess) expr, target, environment);
 		case EXPR_variablecopy:
 		case EXPR_variablemove:
-			return visitVariableAccess((Expr.VariableAccess) expr, target);
+			return visitVariableAccess((Expr.VariableAccess) expr, target, environment);
 		case EXPR_new:
 		case EXPR_staticnew:
-			return visitNew((Expr.New) expr, target);
+			return visitNew((Expr.New) expr, target, environment);
 		default:
 			throw new IllegalArgumentException("invalid expression encountered (" + expr.getClass().getName() + ")");
 		}
@@ -980,17 +1068,17 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param _target
 	 * @return
 	 */
-	public E visitArrayAccess(Expr.ArrayAccess expr, Type target) {
+	public E visitArrayAccess(Expr.ArrayAccess expr, Type target, Environment environment) {
 		Type sourceT = expr.getFirstOperand().getType();
-		E source = visitExpression(expr.getFirstOperand(), sourceT);
+		E source = visitExpression(expr.getFirstOperand(), sourceT, environment);
 		// FIXME: should be usize?
-		E index = visitExpression(expr.getSecondOperand(), Type.Int);
+		E index = visitExpression(expr.getSecondOperand(), Type.Int, environment);
 		List<LowLevel.Type.Array> types = extractArrayTypes(visitType(sourceT));
 		E result = visitor.visitArrayAccess(types, source, index);
 		// Apply any coercions as necessary. This is especially important here as we
 		// won't change the representation of the source array (for performance
 		// reasons). Thus, coercions are likely to be required.
-		return applyCoercion(target, expr.getType(), result);
+		return applyCoercion(target, expr.getType(), result, environment);
 	}
 
 	/**
@@ -1000,10 +1088,10 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param target
 	 * @return
 	 */
-	public E visitArrayGenerator(Expr.ArrayGenerator expr, Type target) {
+	public E visitArrayGenerator(Expr.ArrayGenerator expr, Type target, Environment environment) {
 		Type.Array type = extractTargetType(target, (Type.Array) expr.getType());
-		E value = visitExpression(expr.getFirstOperand(), type.getElement());
-		E length = visitExpression(expr.getSecondOperand(), Type.Int);
+		E value = visitExpression(expr.getFirstOperand(), type.getElement(), environment);
+		E length = visitExpression(expr.getSecondOperand(), Type.Int, environment);
 		return visitor.visitArrayGenerator(visitArray(type), value, length);
 	}
 
@@ -1025,7 +1113,7 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param target
 	 * @return
 	 */
-	public E visitArrayInitialiser(Expr.ArrayInitialiser expr, Type _target) {
+	public E visitArrayInitialiser(Expr.ArrayInitialiser expr, Type _target, Environment environment) {
 		// FIXME: should override ArrayInitialiser.getType() here?
 		Type.Array target = extractTargetType(_target, (Type.Array) expr.getType());
 		LowLevel.Type.Array llType = visitArray(target);
@@ -1033,32 +1121,32 @@ public class LowLevelDriver<D, S, E extends S> {
 		Tuple<Expr> operands = expr.getOperands();
 		List<E> nOperands = new ArrayList<>();
 		for (int i = 0; i != operands.size(); i++) {
-			nOperands.add(visitExpression(operands.get(i), target.getElement()));
+			nOperands.add(visitExpression(operands.get(i), target.getElement(), environment));
 		}
 		// Construct the initialiser itself
 		E result = visitor.visitArrayInitialiser(llType, nOperands);
 		// Apply any coercions as necessary
-		return applyCoercion(_target, target, result);
+		return applyCoercion(_target, target, result, environment);
 	}
 
-	public E visitArrayLength(Expr.ArrayLength expr, Type target) {
+	public E visitArrayLength(Expr.ArrayLength expr, Type target, Environment environment) {
 		// FIXME: The following is completely broken because we might have a readable
 		// array type which doesn't make sense here.
-		Type.Array sourceT = extractTargetArrayType(expr.getOperand().getType(), null);
+		Type.Array sourceT = extractTargetArrayType(expr.getOperand().getType(), null, environment);
 		LowLevel.Type.Array llType = visitArray(sourceT);
-		E source = visitExpression(expr.getOperand(), sourceT);
+		E source = visitExpression(expr.getOperand(), sourceT, environment);
 		E result = visitor.visitArrayLength(llType, source);
-		return applyCoercion(target, expr.getType(), result);
+		return applyCoercion(target, expr.getType(), result, environment);
 	}
 
-	public E visitBitwiseComplement(Expr.BitwiseComplement expr, Type target) {
-		E operand = visitExpression(expr.getOperand(), Type.Byte);
+	public E visitBitwiseComplement(Expr.BitwiseComplement expr, Type target, Environment environment) {
+		E operand = visitExpression(expr.getOperand(), Type.Byte, environment);
 		LowLevel.Type.Int llType = visitByte(Type.Byte);
 		return visitor.visitBitwiseNot(llType, operand);
 	}
 
-	public E visitBitwiseNaryOperator(Expr.NaryOperator expr, Type target) {
-		List<E> args = visitExpressions(expr.getOperands(), Type.Byte);
+	public E visitBitwiseNaryOperator(Expr.NaryOperator expr, Type target, Environment environment) {
+		List<E> args = visitExpressions(expr.getOperands(), Type.Byte, environment);
 		LowLevel.Type.Int llType = visitByte(Type.Byte);
 		E result = args.get(0);
 		// Construct final operation
@@ -1080,9 +1168,9 @@ public class LowLevelDriver<D, S, E extends S> {
 		return result;
 	}
 
-	public E visitBitwiseShiftOperator(Expr.BinaryOperator expr, Type target) {
-		E lhs = visitExpression(expr.getFirstOperand(), Type.Byte);
-		E rhs = visitExpression(expr.getSecondOperand(), Type.Int);
+	public E visitBitwiseShiftOperator(Expr.BinaryOperator expr, Type target, Environment environment) {
+		E lhs = visitExpression(expr.getFirstOperand(), Type.Byte, environment);
+		E rhs = visitExpression(expr.getSecondOperand(), Type.Int, environment);
 		LowLevel.Type.Int llType = visitByte(Type.Byte);
 		switch (expr.getOpcode()) {
 		case EXPR_bitwiseshl:
@@ -1110,9 +1198,9 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param target
 	 * @return
 	 */
-	public E visitCast(Expr.Cast expr, Type target) {
-		E lhs = visitExpression(expr.getOperand(), expr.getType());
-		return applyCoercion(target, expr.getType(), lhs);
+	public E visitCast(Expr.Cast expr, Type target, Environment environment) {
+		E lhs = visitExpression(expr.getOperand(), expr.getType(), environment);
+		return applyCoercion(target, expr.getType(), lhs, environment);
 	}
 
 	/**
@@ -1129,7 +1217,7 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param target
 	 * @return
 	 */
-	public E visitConstantInitialiser(Expr.Constant expr, Type target) {
+	public E visitConstantInitialiser(Expr.Constant expr, Type target, Environment environment) {
 		Value value = expr.getValue();
 		E result;
 		if (value instanceof Value.Null) {
@@ -1151,7 +1239,7 @@ public class LowLevelDriver<D, S, E extends S> {
 			}
 			result = visitor.visitArrayInitialiser(visitor.visitTypeArray(type), values);
 		} else {
-			Type.Int t = extractTargetIntegerType(target, expr.getType());
+			Type.Int t = extractTargetIntegerType(target, expr.getType(), environment);
 			Value.Int i = (Value.Int) value;
 			// FIXME: t should encode the required width. For now, assuming it's always
 			// unbounded (i.e. -1)
@@ -1160,11 +1248,16 @@ public class LowLevelDriver<D, S, E extends S> {
 		}
 		// Finally, apply any necessary coercions. For example, if this is going into a
 		// union.
-		return applyCoercion(target, expr.getType(), result);
+		return applyCoercion(target, expr.getType(), result, environment);
 	}
 
-	public E visitDereference(Expr.Dereference expr, Type target) {
-		throw new UnsupportedOperationException("implement me!");
+	public E visitDereference(Expr.Dereference expr, Type target, Environment environment) {
+		// FIXME: obviously broken
+		Type.Reference type = (Type.Reference) expr.getOperand().getType();
+		LowLevel.Type.Reference llType = visitReference(type);
+		E operand = visitExpression(expr.getOperand(), type, environment);
+		E result = visitor.visitReferenceAccess(llType,operand);
+		return applyCoercion(target,expr.getType(),result, environment);
 	}
 
 	/**
@@ -1179,7 +1272,7 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param target
 	 * @return
 	 */
-	public E visitEquality(Expr.BinaryOperator expr, Type target) {
+	public E visitEquality(Expr.BinaryOperator expr, Type target, Environment environment) {
 		Expr lhs = expr.getFirstOperand();
 		Expr rhs = expr.getSecondOperand();
 		Type lhsT = lhs.getType();
@@ -1187,8 +1280,24 @@ public class LowLevelDriver<D, S, E extends S> {
 		LowLevel.Type llLhsT = visitType(lhsT);
 		LowLevel.Type llRhsT = visitType(rhsT);
 		// Translate operands as need to do this regardless
-		E left = visitExpression(lhs, lhsT);
-		E right = visitExpression(rhs, rhsT);
+		E left = visitExpression(lhs, lhsT, environment);
+		E right = visitExpression(rhs, rhsT, environment);
+		// Apply any coercions as necessary
+		boolean lhsSupRhs = isSubtype(lhsT,rhsT, environment);
+		boolean rhsSupLhs = isSubtype(rhsT,lhsT, environment);
+		if(lhsSupRhs && rhsSupLhs) {
+			// In this case, the types are identical and therefore we can simply do nothing.
+		} else if(lhsSupRhs) {
+			// lhs :> rhs but not rhs :> lhs
+			right = applyCoercion(lhsT,rhsT,right, environment);
+		} else if(lhsSupRhs) {
+			// rhs :> lhs but not lhs :> rhs
+			left = applyCoercion(rhsT,lhsT,left, environment);
+		} else {
+			// Harder case.
+			// FIXME:
+			throw new RuntimeException("GOT HERE");
+		}
 		// Now decide what situation we're in.
 		if (expr instanceof Expr.Equal) {
 			return visitor.visitEqual(llLhsT, llRhsT, left, right);
@@ -1197,18 +1306,19 @@ public class LowLevelDriver<D, S, E extends S> {
 		}
 	}
 
-	public E visitIs(Expr.Is expr) {
+	public E visitIs(Expr.Is expr, Environment environment) {
 		Type lhsT = expr.getOperand().getType();
 		Type rhsT = expr.getTestType();
-		E operand = visitExpression(expr.getOperand(), lhsT);
+		E operand = visitExpression(expr.getOperand(), lhsT, environment);
 		return callRuntimeTypeTest(operand, lhsT, rhsT);
 	}
 
-	public E visitIntegerNegation(Expr.IntegerNegation expr, Type target) {
-		E operand = visitExpression(expr.getOperand(), target);
-		Type.Int type = extractTargetIntegerType(target, expr.getType());
+	public E visitIntegerNegation(Expr.IntegerNegation expr, Type target, Environment environment) {
+		Type.Int type = extractTargetIntegerType(target, expr.getType(), environment);
+		E operand = visitExpression(expr.getOperand(), type, environment);
 		LowLevel.Type.Int llType = visitInt(type);
-		return visitor.visitIntegerNegate(llType, operand);
+		E result = visitor.visitIntegerNegate(llType, operand);
+		return applyCoercion(target, type, result, environment);
 	}
 
 	/**
@@ -1230,15 +1340,15 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param expr
 	 * @return
 	 */
-	public E visitIntegerComparator(Expr.BinaryOperator expr, Type target) {
-		Type.Int leftT = extractTargetIntegerType(expr.getFirstOperand().getType(), Type.Int);
-		Type.Int rightT = extractTargetIntegerType(expr.getSecondOperand().getType(), Type.Int);
+	public E visitIntegerComparator(Expr.BinaryOperator expr, Type target, Environment environment) {
+		Type.Int leftT = extractTargetIntegerType(expr.getFirstOperand().getType(), Type.Int, environment);
+		Type.Int rightT = extractTargetIntegerType(expr.getSecondOperand().getType(), Type.Int, environment);
 		// Determine the "operating type" as this is the only safe type for which the
 		// operation can succeed without overflow.
 		Type.Int operatingT = max(leftT, rightT);
 		// Translate the operands
-		E lhs = visitExpression(expr.getFirstOperand(), operatingT);
-		E rhs = visitExpression(expr.getSecondOperand(), operatingT);
+		E lhs = visitExpression(expr.getFirstOperand(), operatingT, environment);
+		E rhs = visitExpression(expr.getSecondOperand(), operatingT, environment);
 		E result;
 		LowLevel.Type.Int type = visitInt(operatingT);
 		// Construct final operation
@@ -1266,7 +1376,7 @@ public class LowLevelDriver<D, S, E extends S> {
 		}
 		// Finally, apply a coercion (if necessary) to ensure the result is represented
 		// correctly for the target type. This might involve tagging as necessary.
-		return applyCoercion(target, Type.Bool, result);
+		return applyCoercion(target, Type.Bool, result, environment);
 	}
 
 	/**
@@ -1301,16 +1411,16 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param target
 	 * @return
 	 */
-	public E visitIntegerOperator(Expr.BinaryOperator expr, Type target) {
-		Type.Int resT = extractTargetIntegerType(target, expr.getType());
-		Type.Int leftT = extractTargetIntegerType(expr.getFirstOperand().getType(), Type.Int);
-		Type.Int rightT = extractTargetIntegerType(expr.getSecondOperand().getType(), Type.Int);
+	public E visitIntegerOperator(Expr.BinaryOperator expr, Type target, Environment environment) {
+		Type.Int resT = extractTargetIntegerType(target, expr.getType(), environment);
+		Type.Int leftT = extractTargetIntegerType(expr.getFirstOperand().getType(), Type.Int, environment);
+		Type.Int rightT = extractTargetIntegerType(expr.getSecondOperand().getType(), Type.Int, environment);
 		// Determine the "operating type" as this is the only safe type for which the
 		// operation can succeed without overflow.
 		Type.Int operatingT = max(leftT, rightT, resT);
 		// Translate the operands
-		E lhs = visitExpression(expr.getFirstOperand(), operatingT);
-		E rhs = visitExpression(expr.getSecondOperand(), operatingT);
+		E lhs = visitExpression(expr.getFirstOperand(), operatingT, environment);
+		E rhs = visitExpression(expr.getSecondOperand(), operatingT, environment);
 		E result;
 		LowLevel.Type.Int type = visitInt(operatingT);
 		// Construct final operation
@@ -1336,7 +1446,7 @@ public class LowLevelDriver<D, S, E extends S> {
 		// Finally, apply a coercion (if necessary) to ensure the result is represented
 		// correctly for the target type. This might involve an integer coercion or
 		// tagging as necessary.
-		return applyCoercion(target, operatingT, result);
+		return applyCoercion(target, operatingT, result, environment);
 	}
 
 	/**
@@ -1348,51 +1458,51 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param target
 	 * @return
 	 */
-	public E visitInvoke(Expr.Invoke expr, Type target) {
+	public E visitInvoke(Expr.Invoke expr, Type target, Environment environment) {
 		Type.Callable type = expr.getSignature();
 		String name = getMangledName(expr.getName().toString(), type);
 		LowLevel.Type.Method llType = (LowLevel.Type.Method) visitType(type);
 		// Translate invocation arguments
-		List<E> arguments = visitExpressions(expr.getOperands(), type.getParameters());
+		List<E> arguments = visitExpressions(expr.getOperands(), type.getParameters(), environment);
 		// Construct the invocation
 		E result = visitor.visitDirectInvocation(llType, name, arguments);
 		// Finally, apply a coercion (if necessary) to ensure the result is represented
 		// correctly for the target type. Care needs to be taken when handling multiple
 		// returns.
-		return applyCoercion(target, getMultipleReturnType(type.getReturns()), result);
+		return applyCoercion(target, getMultipleReturnType(type.getReturns()), result, environment);
 	}
 
-	public E visitIndirectInvoke(Expr.IndirectInvoke expr, Type target) {
+	public E visitIndirectInvoke(Expr.IndirectInvoke expr, Type target, Environment environment) {
 		Expr source = expr.getSource();
 		Type.Callable type = extractCallableType(source.getType());
 		LowLevel.Type.Method llType = (LowLevel.Type.Method) visitType(type);
 		// Translate indirect target
-		E llSource = visitExpression(source, type);
+		E llSource = visitExpression(source, type, environment);
 		// Translate invocation arguments
-		List<E> llArguments = visitExpressions(expr.getArguments(), type.getParameters());
+		List<E> llArguments = visitExpressions(expr.getArguments(), type.getParameters(), environment);
 		//
 		return visitor.visitIndirectInvocation(llType, llSource, llArguments);
 	}
 
-	public E visitLambda(Decl.Lambda expr, Type target) {
+	public E visitLambda(Decl.Lambda expr, Type target, Environment environment) {
 		throw new UnsupportedOperationException("implement me!");
 	}
 
-	public E visitLambdaAccess(Expr.LambdaAccess expr, Type target) {
+	public E visitLambdaAccess(Expr.LambdaAccess expr, Type target, Environment environment) {
 		String name = getMangledName(expr.getName().toString(), expr.getSignature());
 		LowLevel.Type.Method llType = (LowLevel.Type.Method) visitType(expr.getSignature());
 		return visitor.visitLambdaAccess(llType, name);
 	}
 
-	public E visitLogicalNot(Expr.LogicalNot expr) {
-		E e = visitExpression(expr.getOperand(), Type.Bool);
+	public E visitLogicalNot(Expr.LogicalNot expr, Environment environment) {
+		E e = visitExpression(expr.getOperand(), Type.Bool, environment);
 		return visitor.visitLogicalNot(e);
 	}
 
-	public E visitLogicalBinaryOperator(Expr.BinaryOperator expr) {
+	public E visitLogicalBinaryOperator(Expr.BinaryOperator expr, Environment environment) {
 		// Translate the operands
-		E lhs = visitExpression(expr.getFirstOperand(), Type.Bool);
-		E rhs = visitExpression(expr.getSecondOperand(), Type.Bool);
+		E lhs = visitExpression(expr.getFirstOperand(), Type.Bool, environment);
+		E rhs = visitExpression(expr.getSecondOperand(), Type.Bool, environment);
 		// Construct final operation
 		switch (expr.getOpcode()) {
 		case EXPR_logiaclimplication:
@@ -1405,9 +1515,9 @@ public class LowLevelDriver<D, S, E extends S> {
 		}
 	}
 
-	public E visitLogicalNaryOperator(Expr.NaryOperator expr) {
+	public E visitLogicalNaryOperator(Expr.NaryOperator expr, Environment environment) {
 		// Translate the operands
-		List<E> args = visitExpressions(expr.getOperands(), Type.Bool);
+		List<E> args = visitExpressions(expr.getOperands(), Type.Bool, environment);
 		E result = args.get(0);
 		// Construct final operation
 		for (int i = 1; i != args.size(); ++i) {
@@ -1424,18 +1534,18 @@ public class LowLevelDriver<D, S, E extends S> {
 		}
 		return result;
 	}
-
 	/**
 	 *
 	 * @param expr
 	 * @param target
 	 * @return
 	 */
-	public E visitNew(Expr.New expr, Type target) {
-		E operand = visitExpression(expr.getOperand(), Type.Bool);
+	public E visitNew(Expr.New expr, Type target, Environment environment) {
 		// FIXME: this is obviously broken
-		LowLevel.Type.Reference type = (LowLevel.Type.Reference) expr.getType();
-		return visitor.visitReferenceInitialiser(type, operand);
+		Type.Reference type = (Type.Reference) target;
+		LowLevel.Type.Reference llType = visitReference(type);
+		E operand = visitExpression(expr.getOperand(), type.getElement(), environment);
+		return visitor.visitReferenceInitialiser(llType, operand);
 	}
 
 	/**
@@ -1484,16 +1594,16 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param target
 	 * @return
 	 */
-	public E visitRecordAccess(Expr.RecordAccess expr, Type target) {
+	public E visitRecordAccess(Expr.RecordAccess expr, Type target, Environment environment) {
 		Type sourceT = expr.getOperand().getType();
-		E source = visitExpression(expr.getOperand(), sourceT);
+		E source = visitExpression(expr.getOperand(), sourceT, environment);
 		// FIXME: this is clearly broken
 		LowLevel.Type.Record type = (LowLevel.Type.Record) visitType(sourceT);
 		E result = visitor.visitRecordAccess(type, source, expr.getField().toString());
 		// Apply any coercions as necessary. This is especially important here as we
 		// won't change the representation of the source array (for performance
 		// reasons). Thus, coercions are likely to be required.
-		return applyCoercion(target, expr.getType(), result);
+		return applyCoercion(target, expr.getType(), result, environment);
 	}
 
 	/**
@@ -1524,7 +1634,7 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param target
 	 * @return
 	 */
-	public E visitRecordInitialiser(Expr.RecordInitialiser expr, Type _target) {
+	public E visitRecordInitialiser(Expr.RecordInitialiser expr, Type _target, Environment environment) {
 		Type.Record target = extractTargetType(_target, expr.getType());
 		LowLevel.Type.Record llType = visitRecord(target);
 		// Translate the initialiser operands
@@ -1543,12 +1653,12 @@ public class LowLevelDriver<D, S, E extends S> {
 			// these may not line up exactly with the target type.
 			int index = getFieldIndex(fields, field.getName());
 			// Translate field initialiser into correct position for target type.
-			nOperands.add(visitExpression(operands.get(index), field.getType()));
+			nOperands.add(visitExpression(operands.get(index), field.getType(), environment));
 		}
 		// Construct the initialiser
 		E result = visitor.visitRecordInitialiser(llType, nOperands);
 		// Apply any coercions as necessary
-		return applyCoercion(_target, target, result);
+		return applyCoercion(_target, target, result, environment);
 	}
 
 	/**
@@ -1585,7 +1695,7 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param target
 	 * @return
 	 */
-	public E visitStaticVariableAccess(Expr.StaticVariableAccess expr, Type target) {
+	public E visitStaticVariableAccess(Expr.StaticVariableAccess expr, Type target, Environment environment) {
 		try {
 			WhileyFile.Decl.StaticVariable decl = typeSystem.resolveExactly(expr.getName(),
 					WhileyFile.Decl.StaticVariable.class);
@@ -1593,7 +1703,7 @@ public class LowLevelDriver<D, S, E extends S> {
 			E result = visitor.visitStaticVariableAccess(llType, decl.getName().toString());
 			// Apply any coercions as necessary to ensure return value is in the correct
 			// form.
-			return applyCoercion(target, decl.getType(), result);
+			return applyCoercion(target, decl.getType(), result, environment);
 		} catch (ResolutionError e) {
 			// Should be deadcode
 			throw new RuntimeException(e);
@@ -1630,7 +1740,7 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param target
 	 * @return
 	 */
-	public E visitVariableAccess(Expr.VariableAccess expr, Type target) {
+	public E visitVariableAccess(Expr.VariableAccess expr, Type target, Environment environment) {
 		Decl.Variable decl = expr.getVariableDeclaration();
 		LowLevel.Type llType = visitType(decl.getType());
 		E result = visitor.visitVariableAccess(llType, decl.getName().toString());
@@ -1641,7 +1751,7 @@ public class LowLevelDriver<D, S, E extends S> {
 		}
 		// Apply any coercions as necessary to ensure return value is in the correct
 		// form.
-		return applyCoercion(target, decl.getType(), result);
+		return applyCoercion(target, decl.getType(), result, environment);
 	}
 
 	/**
@@ -1695,14 +1805,14 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param expr
 	 * @return
 	 */
-	public E visitQuantifier(Expr.Quantifier expr) {
+	public E visitQuantifier(Expr.Quantifier expr, Environment environment) {
 		String name = "expr$" + expr.getIndex();
 		Set<WhileyFile.Decl.Variable> uses = determineUsedVariables(expr);
 		List<wycc.util.Pair<LowLevel.Type, String>> parameters = constructQuantifierParameters(uses);
-		E condition = visitExpression(expr.getOperand(), Type.Bool);
+		E condition = visitExpression(expr.getOperand(), Type.Bool, environment);
 		// Create the method body, which contains the sequence of nested quantifier for
 		// loops and the final return statement.
-		List<S> body = constructQuantifierBody(expr, 0, condition);
+		List<S> body = constructQuantifierBody(expr, 0, condition, environment);
 		// Determine whether getting through the loops should return true or false
 		E retval = visitor.visitLogicalInitialiser(expr instanceof Expr.UniversalQuantifier);
 		body.add(visitor.visitReturn(retval));
@@ -1724,7 +1834,7 @@ public class LowLevelDriver<D, S, E extends S> {
 		return parameters;
 	}
 
-	public List<S> constructQuantifierBody(Expr.Quantifier expr, int index, E condition) {
+	public List<S> constructQuantifierBody(Expr.Quantifier expr, int index, E condition, Environment environment) {
 		Tuple<Decl.Variable> parameters = expr.getParameters();
 		ArrayList<S> stmts = new ArrayList<>();
 		if (index == parameters.size()) {
@@ -1749,8 +1859,8 @@ public class LowLevelDriver<D, S, E extends S> {
 			Decl.Variable parameter = parameters.get(index);
 			Expr.ArrayRange range = (Expr.ArrayRange) parameter.getInitialiser();
 			// FIXME: should be usize
-			E start = visitExpression(range.getFirstOperand(), Type.Int);
-			E end = visitExpression(range.getSecondOperand(), Type.Int);
+			E start = visitExpression(range.getFirstOperand(), Type.Int, environment);
+			E end = visitExpression(range.getSecondOperand(), Type.Int, environment);
 			// Construct index variable
 			LowLevel.Type.Int varType = visitor.visitTypeInt(-1);
 			S var = visitor.visitVariableDeclaration(varType, parameter.getName().get(), start);
@@ -1759,7 +1869,7 @@ public class LowLevelDriver<D, S, E extends S> {
 			E one = visitor.visitIntegerInitialiser(varType, BigInteger.ONE);
 			S increment = visitor.visitAssign(varAccess, visitor.visitIntegerAdd(varType, varAccess, one));
 			// Recursively create nested loops for remaining parameters
-			List<S> body = constructQuantifierBody(expr, index + 1, condition);
+			List<S> body = constructQuantifierBody(expr, index + 1, condition, environment);
 			// Return the loop for this parameter
 			stmts.add(visitor.visitFor(var, loopCondition, increment, body));
 		}
@@ -1827,28 +1937,28 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param expr
 	 * @return
 	 */
-	public E applyCoercion(Type target, Type actual, E expr) {
-		if (target.equals(actual)) {
+	public E applyCoercion(Type target, Type actual, E expr, Environment environment) {
+		if (target.equals(actual) || actual instanceof Type.Void) {
 			// no coercion required in this case
 			return expr;
 		} else if (target instanceof Type.Int && actual instanceof Type.Int) {
 			return applyIntCoercion((Type.Int) target, (Type.Int) actual, expr);
 		} else if (target instanceof Type.Array && actual instanceof Type.Array) {
-			return applyArrayCoercion((Type.Array) target, (Type.Array) actual, expr);
+			return applyArrayCoercion((Type.Array) target, (Type.Array) actual, expr, environment);
 		} else if (target instanceof Type.Record && actual instanceof Type.Record) {
 			return applyRecordCoercion((Type.Record) target, (Type.Record) actual, expr);
 		} else if (target instanceof Type.Reference && actual instanceof Type.Reference) {
 			return applyReferenceCoercion((Type.Reference) target, (Type.Reference) actual, expr);
 		} else if (target instanceof Type.Nominal) {
-			return applyNominalCoercion((Type.Nominal) target, actual, expr);
+			return applyNominalCoercion((Type.Nominal) target, actual, expr, environment);
 		} else if (actual instanceof Type.Nominal) {
-			return applyNominalCoercion(target, (Type.Nominal) actual, expr);
+			return applyNominalCoercion(target, (Type.Nominal) actual, expr, environment);
 		} else if (target instanceof Type.Union && actual instanceof Type.Union) {
-			return applyUnionCoercion((Type.Union) target, (Type.Union) actual, expr);
+			return applyUnionCoercion((Type.Union) target, (Type.Union) actual, expr, environment);
 		} else if (target instanceof Type.Union) {
-			return applyUnionCoercion((Type.Union) target, actual, expr);
+			return applyUnionCoercion((Type.Union) target, actual, expr, environment);
 		} else if (actual instanceof Type.Union) {
-			return applyUnionCoercion(target, (Type.Union) actual, expr);
+			return applyUnionCoercion(target, (Type.Union) actual, expr, environment);
 		} else {
 			throw new IllegalArgumentException("unknown coercion: " + actual + " => " + target);
 		}
@@ -1862,13 +1972,13 @@ public class LowLevelDriver<D, S, E extends S> {
 		return visitor.visitIntegerCoercion(target, actual, expr);
 	}
 
-	public E applyArrayCoercion(Type.Array target, Type.Array actual, E expr) {
+	public E applyArrayCoercion(Type.Array target, Type.Array actual, E expr, Environment environment) {
 		String name = "coercion$" + coercionIndex;
-		D body = constructArrayArrayCoercion(name,target,actual);
+		D body = constructArrayArrayCoercion(name,target,actual,environment);
 		return constructCoercionMethod(target,actual,expr,body);
 	}
 
-	public D constructArrayArrayCoercion(String name, Type.Array target, Type.Array actual) {
+	public D constructArrayArrayCoercion(String name, Type.Array target, Type.Array actual, Environment environment) {
 		LowLevel.Type.Int llIndexT = visitor.visitTypeInt(-1);
 		LowLevel.Type.Array llTarget = visitArray(target);
 		LowLevel.Type.Array llActual = visitArray(actual);
@@ -1889,7 +1999,7 @@ public class LowLevelDriver<D, S, E extends S> {
 		E lhs = visitor.visitArrayAccess(llTargets, targetVar, indexVar);
 		ArrayList<LowLevel.Type.Array> llActuals = new ArrayList<>();
 		llActuals.add(llActual);
-		E rhs = applyCoercion(target.getElement(),actual.getElement(),visitor.visitArrayAccess(llActuals, actualVar, indexVar));
+		E rhs = applyCoercion(target.getElement(),actual.getElement(),visitor.visitArrayAccess(llActuals, actualVar, indexVar), environment);
 		loopBody.add(visitor.visitAssign(lhs, rhs));
 		// Construct the coercion loop itself
 		S decl = visitor.visitVariableDeclaration(llIndexT, "i",
@@ -1940,62 +2050,64 @@ public class LowLevelDriver<D, S, E extends S> {
 		throw new RuntimeException("implement me!");
 	}
 
-	public E applyNominalCoercion(Type.Nominal target, Type actual, E expr) {
+	public E applyNominalCoercion(Type.Nominal target, Type actual, E expr, Environment environment) {
 		try {
 			WhileyFile.Decl.Type decl = typeSystem.resolveExactly(target.getName(), WhileyFile.Decl.Type.class);
-			return applyCoercion(decl.getType(),actual,expr);
+			return applyCoercion(decl.getType(), actual, expr, environment);
 		} catch (ResolutionError e) {
 			throw new IllegalArgumentException("invalid nominal type (" + target + ")");
 		}
 	}
 
-	public E applyNominalCoercion(Type target, Type.Nominal actual, E expr) {
+	public E applyNominalCoercion(Type target, Type.Nominal actual, E expr, Environment environment) {
 		try {
 			WhileyFile.Decl.Type decl = typeSystem.resolveExactly(actual.getName(), WhileyFile.Decl.Type.class);
-			return applyCoercion(target,decl.getType(),expr);
+			return applyCoercion(target, decl.getType(), expr, environment);
 		} catch (ResolutionError e) {
 			throw new IllegalArgumentException("invalid nominal type (" + target + ")");
 		}
 	}
 
-	public E applyUnionCoercion(Type.Union target, Type.Union actual, E expr) {
+	public E applyUnionCoercion(Type.Union target, Type.Union actual, E expr, Environment environment) {
 		// Construct coercion method
 		String name = "coercion$" + coercionIndex;
-		D body = constructUnionUnionCoercion(name,target,actual);
+		D body = constructUnionUnionCoercion(name,target,actual, environment);
 		return constructCoercionMethod(target,actual,expr,body);
 	}
 
-	public D constructUnionUnionCoercion(String name, Type.Union target, Type.Union actual) {
-		LowLevel.Type paramType = visitType(actual);
+	public D constructUnionUnionCoercion(String name, Type.Union target, Type.Union actual, Environment environment) {
+		LowLevel.Type.Union paramType = visitUnion(actual);
 		LowLevel.Type retType = visitType(target);
 		E parameter = visitor.visitVariableAccess(paramType, "val");
+		E tag = visitor.visitUnionAccess(paramType, parameter);
 		ArrayList<S> stmts = new ArrayList<>();
 		ArrayList<wycc.util.Pair<Integer, List<S>>> branches = new ArrayList();
 		for(int i=0;i!=actual.size();++i) {
 			Integer c = (i+1) == actual.size() ? null : i;
 			List<S> branch = new ArrayList<>();
-			E coercion = applyCoercion(target,actual.get(i),parameter);
+			E data = visitor.visitUnionLeave(paramType, i, parameter);
+			E coercion = applyCoercion(target,actual.get(i),data, environment);
 			branch.add(visitor.visitReturn(coercion));
 			branches.add(new wycc.util.Pair<>(c,branch));
 		}
-		stmts.add(visitor.visitSwitch(parameter,branches));
+		stmts.add(visitor.visitSwitch(tag,branches));
 		List<wycc.util.Pair<LowLevel.Type, String>> parameters = new ArrayList<>();
 		parameters.add(new wycc.util.Pair<>(paramType,"val"));
 		return visitor.visitMethod(name, parameters, retType, stmts);
 	}
 
-	public E applyUnionCoercion(Type.Union target, Type actual, E expr) {
-		int tag = determineTag(target,actual);
+	public E applyUnionCoercion(Type.Union target, Type actual, E expr, Environment environment) {
+		int tag = determineTag(target,actual,environment);
 		Type element = target.get(tag);
-		expr = applyCoercion(element,actual,expr);
+		expr = applyCoercion(element,actual,expr, environment);
 		LowLevel.Type.Union llTarget = visitUnion(target);
 		return visitor.visitUnionEnter(llTarget,tag,expr);
 	}
 
-	public E applyUnionCoercion(Type target, Type.Union actual, E expr) {
-		int tag = determineTag(target,actual);
+	public E applyUnionCoercion(Type target, Type.Union actual, E expr, Environment environment) {
+		int tag = determineTag(target,actual,environment);
 		Type element = actual.get(tag);
-		expr = applyCoercion(target,element,expr);
+		expr = applyCoercion(target,element,expr,environment);
 		LowLevel.Type.Union llActual = visitUnion(actual);
 		return visitor.visitUnionLeave(llActual, tag, expr);
 	}
@@ -2161,12 +2273,12 @@ public class LowLevelDriver<D, S, E extends S> {
 		return visitor.visitDirectInvocation(type, "is$" + i, arguments);
 	}
 
-	public void constructRuntimeTypeTests() {
+	public void constructRuntimeTypeTests(Environment environment) {
 		LowLevel.Type retType = visitor.visitTypeBool();
 		for(int i=0;i!=runtimeTypeTests.size();++i) {
 			// Construct body
 			Pair<Type,Type> rtt = runtimeTypeTests.get(i);
-			List<S> body = constructRuntimeTypeTest(rtt.first(),rtt.second());
+			List<S> body = constructRuntimeTypeTest(rtt.first(),rtt.second(), environment);
 			ArrayList<Pair<LowLevel.Type, String>> parameters = new ArrayList<>();
 			parameters.add(new Pair<>(visitType(rtt.first()),"x"));
 			// Construct auxillary method
@@ -2175,7 +2287,7 @@ public class LowLevelDriver<D, S, E extends S> {
 		}
 	}
 
-	public List<S> constructRuntimeTypeTest(Type actual, Type test) {
+	public List<S> constructRuntimeTypeTest(Type actual, Type test, Environment environment) {
 		if(actual.equals(test)) {
 			// FIXME: should prevent this
 			return constructTrivialRuntimeTypeTest();
@@ -2197,7 +2309,7 @@ public class LowLevelDriver<D, S, E extends S> {
 		} else if (actual instanceof Type.Nominal) {
 			return constructNominalTypeRuntimeTypeTest((Type.Nominal) actual, test);
 		} else if (actual instanceof Type.Union) {
-			return constructUnionTypeRuntimeTypeTest((Type.Union) actual, test);
+			return constructUnionTypeRuntimeTypeTest((Type.Union) actual, test, environment);
 		} else if (test instanceof Type.Union) {
 			return constructTypeUnionRuntimeTypeTest(actual, (Type.Union) test);
 		} else if (test instanceof Type.Nominal) {
@@ -2283,10 +2395,10 @@ public class LowLevelDriver<D, S, E extends S> {
 	 * @param test
 	 * @return
 	 */
-	public List<S> constructUnionTypeRuntimeTypeTest(Type.Union actual, Type test) {
+	public List<S> constructUnionTypeRuntimeTypeTest(Type.Union actual, Type test, Environment environment) {
 		LowLevel.Type.Int tagT = visitInt(Type.Int);
 		LowLevel.Type.Union llActualT = visitUnion(actual);
-		int tag = determineTag(actual, test);
+		int tag = determineTag(actual, test, environment);
 		Type refined = actual.get(tag);
 		E expr = visitor.visitVariableAccess(llActualT, "x");
 		expr = visitor.visitUnionAccess(llActualT, expr);
@@ -2363,28 +2475,28 @@ public class LowLevelDriver<D, S, E extends S> {
 	// Helpers
 	// ==========================================================================
 
-	public int determineTag(Type.Union parent, Type child) {
+	public int determineTag(Type.Union parent, Type child, Environment environment) {
 		for (int i = 0; i != parent.size(); ++i) {
-			if (isSubtype(parent.get(i), child)) {
+			if (isSubtype(parent.get(i), child, environment)) {
 				return i;
 			}
 		}
 		throw new IllegalArgumentException("cannot determine appropriate tag (" + parent + "<-" + child + ")");
 	}
 
-	public int determineTag(Type parent, Type.Union child) {
+	public int determineTag(Type parent, Type.Union child, Environment environment) {
 		for (int i = 0; i != child.size(); ++i) {
-			if (isSubtype(parent, child.get(i))) {
+			if (isSubtype(parent, child.get(i), environment)) {
 				return i;
 			}
 		}
 		throw new IllegalArgumentException("cannot determine appropriate tag (" + parent + "<-" + child + ")");
 	}
 
-	public boolean isSubtype(Type parent, Type child) {
+	public boolean isSubtype(Type parent, Type child, Environment environment) {
 		try {
 			// FIXME: need to handle lifetimes properly
-			return typeSystem.isRawSubtype(parent, child, null);
+			return typeSystem.isRawSubtype(parent, child, environment);
 		} catch (ResolutionError e) {
 			throw new RuntimeException("internal failure");
 		}
@@ -2617,7 +2729,7 @@ public class LowLevelDriver<D, S, E extends S> {
 	 *            the actual target.
 	 * @return
 	 */
-	public Type.Int extractTargetIntegerType(Type target, Type actual) {
+	public Type.Int extractTargetIntegerType(Type target, Type actual, Environment environment) {
 		try {
 			if (target instanceof Type.Int) {
 				return (Type.Int) target;
@@ -2625,20 +2737,20 @@ public class LowLevelDriver<D, S, E extends S> {
 				Type.Union type = (Type.Union) target;
 				for (int i = 0; i != type.size(); ++i) {
 					Type element = type.get(i);
-					if (typeSystem.isRawCoerciveSubtype(element, actual, null)) {
-						return extractTargetIntegerType(element, actual);
+					if (typeSystem.isRawCoerciveSubtype(element, actual, environment)) {
+						return extractTargetIntegerType(element, actual, environment);
 					}
 				}
 				throw new RuntimeException("deadcode reached");
 			} else if (target instanceof Type.Nominal) {
 				Type.Nominal type = (Type.Nominal) target;
 				WhileyFile.Decl.Type decl = typeSystem.resolveExactly(type.getName(), WhileyFile.Decl.Type.class);
-				return extractTargetIntegerType(decl.getType(), actual);
+				return extractTargetIntegerType(decl.getType(), actual, environment);
 			} else if (target instanceof Type.Intersection) {
 				Type.Intersection type = (Type.Intersection) target;
 				Type.Int result = null;
 				for(int i=0;i!=type.size();++i) {
-					Type.Int t = extractTargetIntegerType(type.get(i), actual);
+					Type.Int t = extractTargetIntegerType(type.get(i), actual, environment);
 					// FIXME: at this point, we might need to merge integers of different width
 					// properly.
 					if(result == null) {
@@ -2676,7 +2788,7 @@ public class LowLevelDriver<D, S, E extends S> {
 	 *            the actual target.
 	 * @return
 	 */
-	public Type.Array extractTargetArrayType(Type target, Type.Array actual) {
+	public Type.Array extractTargetArrayType(Type target, Type.Array actual, Environment environment) {
 		try {
 			if (target instanceof Type.Array) {
 				return (Type.Array) target;
@@ -2684,15 +2796,15 @@ public class LowLevelDriver<D, S, E extends S> {
 				Type.Union type = (Type.Union) target;
 				for (int i = 0; i != type.size(); ++i) {
 					Type element = type.get(i);
-					if (typeSystem.isRawCoerciveSubtype(element, actual, null)) {
-						return extractTargetArrayType(element, actual);
+					if (typeSystem.isRawCoerciveSubtype(element, actual, environment)) {
+						return extractTargetArrayType(element, actual, environment);
 					}
 				}
 				throw new RuntimeException("deadcode reached");
 			} else if (target instanceof Type.Nominal) {
 				Type.Nominal type = (Type.Nominal) target;
 				WhileyFile.Decl.Type decl = typeSystem.resolveExactly(type.getName(), WhileyFile.Decl.Type.class);
-				return extractTargetArrayType(decl.getType(), actual);
+				return extractTargetArrayType(decl.getType(), actual, environment);
 			} else {
 				throw new UnsupportedOperationException("implement target array extraction (" + target + ")");
 			}
@@ -2792,5 +2904,43 @@ public class LowLevelDriver<D, S, E extends S> {
 		// NOTE: this could potentially just call extractIntegerType on a union of the
 		// above.
 		return Type.Int;
+	}
+
+	public static class Environment implements LifetimeRelation {
+		private final Map<String, String[]> withins;
+
+		public Environment() {
+			this.withins = new HashMap<>();
+		}
+
+		public Environment(Map<String, String[]> withins) {
+			this.withins = new HashMap<>(withins);
+		}
+
+		@Override
+		public boolean isWithin(String inner, String outer) {
+			//
+			if (outer.equals("*") || inner.equals(outer)) {
+				// Cover easy cases first
+				return true;
+			} else {
+				String[] outers = withins.get(inner);
+				return outers != null && (ArrayUtils.firstIndexOf(outers, outer) >= 0);
+			}
+		}
+
+		public Environment declareWithin(String inner, Tuple<Identifier> outers) {
+			String[] outs = new String[outers.size()];
+			for (int i = 0; i != outs.length; ++i) {
+				outs[i] = outers.get(i).get();
+			}
+			return declareWithin(inner, outs);
+		}
+
+		public Environment declareWithin(String inner, String... outers) {
+			Environment nenv = new Environment(withins);
+			nenv.withins.put(inner, outers);
+			return nenv;
+		}
 	}
 }

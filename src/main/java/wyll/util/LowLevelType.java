@@ -192,6 +192,29 @@ public abstract class LowLevelType implements LowLevel.Type {
 		}
 	}
 
+	public static class Reference extends LowLevelType implements Type.Reference {
+		/**
+		 * Element type of this array.
+		 */
+		private final LowLevelType element;
+
+		public Reference(LowLevelType element) {
+			this.element = element;
+		}
+
+		@Override
+		public int getWidth() {
+			// TODO Auto-generated method stub
+			return 0;
+		}
+
+		@Override
+		public Type getElement() {
+			return element;
+		}
+
+	}
+
 	public static class Recursive extends LowLevelType implements Type.Recursive {
 
 		@Override
