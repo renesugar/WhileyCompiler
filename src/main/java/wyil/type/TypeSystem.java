@@ -18,6 +18,7 @@ import java.util.List;
 import wybs.util.AbstractCompilationUnit.Name;
 import wyc.util.WhileyFileResolver;
 import wyil.type.SubtypeOperator.LifetimeRelation;
+import wyil.type.extractors.ConcreteTypeExtractor;
 import wyil.type.extractors.ReadableTypeExtractor;
 import wyil.type.extractors.WriteableTypeExtractor;
 import wyil.type.rewriters.AlgebraicTypeSimplifier;
@@ -61,18 +62,14 @@ public class TypeSystem {
 	private final NameResolver resolver;
 	private final SubtypeOperator strictSubtypeOperator;
 	private final SubtypeOperator coerciveSubtypeOperator;
-	private final TypeExtractor<Type,Object> readableTypeExtractor;
-	private final TypeExtractor<Type,Object> writeableTypeExtractor;
-//	private final TypeInvariantExtractor typeInvariantExtractor;
+	private final TypeExtractor<Type,Object> typeExtractor;
 	private final TypeRewriter typeSimplifier;
 
 	public TypeSystem(Build.Project project) {
 		this.resolver = new WhileyFileResolver(project);
 		this.strictSubtypeOperator = new StrictSubtypeOperator(this);
 		this.coerciveSubtypeOperator = new RelaxedSubtypeOperator(this);
-		this.readableTypeExtractor = new ReadableTypeExtractor(resolver,this);
-		this.writeableTypeExtractor = new WriteableTypeExtractor(resolver,this);
-//		this.typeInvariantExtractor = new TypeInvariantExtractor(resolver);
+		this.typeExtractor = new ConcreteTypeExtractor(resolver,this);
 		this.typeSimplifier = new AlgebraicTypeSimplifier();
 	}
 
@@ -212,21 +209,6 @@ public class TypeSystem {
 	}
 
 	/**
-	 * For a given type extract its readable type, such as a readable record or
-	 * array type. For example, the type
-	 * <code>({int x, int y}|{int x, int z})</code> has readable record type
-	 * <code>{int x, ...}</code>.
-	 *
-	 * @param type
-	 * @param lifetimes
-	 * @return
-	 * @throws ResolutionError
-	 */
-	public Type extractReadableType(Type type, LifetimeRelation lifetimes) throws ResolutionError {
-		return readableTypeExtractor.extract(type, lifetimes, null);
-	}
-
-	/**
 	 * For a given type, extract its readable record type. For example, the type
 	 * <code>({int x, int y}|{int x, int z})</code> has readable record type
 	 * <code>{int x, ...}</code>. The following illustrates some more cases:
@@ -244,35 +226,8 @@ public class TypeSystem {
 	 * @return
 	 * @throws ResolutionError
 	 */
-	public Type.Record extractReadableRecord(Type type, LifetimeRelation lifetimes) throws ResolutionError {
-		type = readableTypeExtractor.extract(type, lifetimes, null);
-		if(type instanceof Type.Record) {
-			return (Type.Record) type;
-		} else {
-			return null;
-		}
-	}
-
-	/**
-	 * For a given type, extract its writeable record type. For example, the type
-	 * <code>({int x, int y}|{int x, int z})</code> has writeable record type
-	 * <code>{int x, ...}</code>. The following illustrates some more cases:
-	 *
-	 * <pre>
-	 * {int x, int y} | null    ==> null
-	 * {int x, int y} | {int x} ==> {int x, ...}
-	 * {int x, int y} | {int x, bool y} ==> {int x, int|bool y}
-	 * {int x, int y} & null    ==> null
-	 * {int x, int y} & {int x} ==> null
-	 * {int x, int y} & {int x, int|bool y} ==> {int x, int y}
-	 * </pre>
-	 *
-	 * @param type
-	 * @return
-	 * @throws ResolutionError
-	 */
-	public Type.Record extractWriteableRecord(Type type, LifetimeRelation lifetimes) throws ResolutionError {
-		type = writeableTypeExtractor.extract(type, lifetimes, null);
+	public Type.Record extractRecord(Type type, LifetimeRelation lifetimes) throws ResolutionError {
+		type = typeExtractor.extract(type, lifetimes, null);
 		if(type instanceof Type.Record) {
 			return (Type.Record) type;
 		} else {
@@ -289,33 +244,14 @@ public class TypeSystem {
 	 * @return
 	 * @throws ResolutionError
 	 */
-	public Type.Array extractReadableArray(Type type, LifetimeRelation lifetimes) throws ResolutionError {
-		type = readableTypeExtractor.extract(type, lifetimes, null);
+	public Type.Array extractArray(Type type, LifetimeRelation lifetimes) throws ResolutionError {
+		type = typeExtractor.extract(type, lifetimes, null);
 		if(type instanceof Type.Array) {
 			return (Type.Array) type;
 		} else {
 			return null;
 		}
 	}
-
-	/**
-	 * Extract the writeable array type from a given type. For example, the type
-	 * <code>(any[])|(bool[])</code> has a readable array type of
-	 * <code>bool[]</code>.
-	 *
-	 * @param type
-	 * @return
-	 * @throws ResolutionError
-	 */
-	public Type.Array extractWriteableArray(Type type, LifetimeRelation lifetimes) throws ResolutionError {
-		type = writeableTypeExtractor.extract(type, lifetimes, null);
-		if(type instanceof Type.Array) {
-			return (Type.Array) type;
-		} else {
-			return null;
-		}
-	}
-
 
 	/**
 	 * Extract the readable reference type from a given type. This is relatively
@@ -327,27 +263,8 @@ public class TypeSystem {
 	 * @return
 	 * @throws ResolutionError
 	 */
-	public Type.Reference extractReadableReference(Type type, LifetimeRelation lifetimes) throws ResolutionError {
-		type = readableTypeExtractor.extract(type, lifetimes, null);
-		if(type instanceof Type.Reference) {
-			return (Type.Reference) type;
-		} else {
-			return null;
-		}
-	}
-
-	/**
-	 * Extract the writeable reference type from a given type. This is relatively
-	 * straightforward. For example, <code>&int</code> is extracted as
-	 * <code>&int</code>. However, <code>(&int)|(&bool)</code> is not extracted
-	 * as as <code>&(int|bool)</code>.
-	 *
-	 * @param type
-	 * @return
-	 * @throws ResolutionError
-	 */
-	public Type.Reference extractWriteableReference(Type type, LifetimeRelation lifetimes) throws ResolutionError {
-		type = writeableTypeExtractor.extract(type, lifetimes, null);
+	public Type.Reference extractReference(Type type, LifetimeRelation lifetimes) throws ResolutionError {
+		type = typeExtractor.extract(type, lifetimes, null);
 		if(type instanceof Type.Reference) {
 			return (Type.Reference) type;
 		} else {
@@ -366,36 +283,14 @@ public class TypeSystem {
 	 * @return
 	 * @throws ResolutionError
 	 */
-	public Type.Callable extractReadableLambda(Type type, LifetimeRelation lifetimes) throws ResolutionError {
-		type = readableTypeExtractor.extract(type, lifetimes, null);
+	public Type.Callable extractLambda(Type type, LifetimeRelation lifetimes) throws ResolutionError {
+		type = typeExtractor.extract(type, lifetimes, null);
 		if(type instanceof Type.Callable) {
 			return (Type.Callable) type;
 		} else {
 			return null;
 		}
 	}
-
-	/**
-	 * Extracting the invariant (if any) from a given type. For example,
-	 * consider the following type declaration:
-	 *
-	 * <pre>
-	 * type nat is (int x) where x >= 0
-	 * </pre>
-	 *
-	 * Then, extracting the invariant from type <code>nat</code> gives
-	 * <code>x >= 0</code>. Likewise, extracting the invariant from the type
-	 * <code>bool|int</code> gives the invariant
-	 * <code>(x is int) ==> (x >= 0)</code>. Finally, extracting the invariant
-	 * from the type <code>nat[]</code> gives the invariant
-	 * <code>forall(int i).(0 <= i
-	 * && i < |xs| ==> xs[i] >= 0)</code>.
-	 *
-	 *
-	 */
-//	public Formula extractInvariant(Type type, Expr root) throws ResolutionError {
-//		return typeInvariantExtractor.extract(type,root);
-//	}
 
 	// ========================================================================
 	// Inference

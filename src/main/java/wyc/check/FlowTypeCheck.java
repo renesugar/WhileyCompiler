@@ -1343,7 +1343,7 @@ public class FlowTypeCheck {
 		Expr subscript = lval.getSecondOperand();
 		//
 		Type sourceT = checkExpression(source, environment);
-		Type.Array writeableArrayT = checkIsArrayType(sourceT, AccessMode.WRITING, environment, source);
+		Type.Array writeableArrayT = checkIsArrayType(sourceT, environment, source);
 		Type subscriptT = checkExpression(subscript, environment);
 		checkIsSubtype(new Type.Int(), subscriptT, environment, subscript);
 		//
@@ -1352,7 +1352,7 @@ public class FlowTypeCheck {
 
 	public Type checkRecordLVal(Expr.RecordAccess lval, Environment environment) {
 		Type src = checkExpression(lval.getOperand(), environment);
-		Type.Record writeableRecordT = checkIsRecordType(src, AccessMode.WRITING, environment, lval.getOperand());
+		Type.Record writeableRecordT = checkIsRecordType(src, environment, lval.getOperand());
 		//
 		Type type = writeableRecordT.getField(lval.getField());
 		if (type == null) {
@@ -1364,7 +1364,7 @@ public class FlowTypeCheck {
 
 	public Type checkDereferenceLVal(Expr.Dereference lval, Environment environment) {
 		Type operandT = checkExpression(lval.getOperand(), environment);
-		Type.Reference writeableReferenceT = checkIsReferenceType(operandT, AccessMode.WRITING, environment,
+		Type.Reference writeableReferenceT = checkIsReferenceType(operandT, environment,
 				lval.getOperand());
 		//
 		return writeableReferenceT.getElement();
@@ -1709,7 +1709,7 @@ public class FlowTypeCheck {
 
 	private Type checkRecordAccess(Expr.RecordAccess expr, Environment env) {
 		Type src = checkExpression(expr.getOperand(), env);
-		Type.Record readableRecordT = checkIsRecordType(src, AccessMode.READING, env, expr.getOperand());
+		Type.Record readableRecordT = checkIsRecordType(src, env, expr.getOperand());
 		//
 		Type type = readableRecordT.getField(expr.getField());
 		if (type == null) {
@@ -1722,7 +1722,7 @@ public class FlowTypeCheck {
 	private Type checkRecordUpdate(Expr.RecordUpdate expr, Environment env) {
 		Type src = checkExpression(expr.getFirstOperand(), env);
 		Type val = checkExpression(expr.getSecondOperand(), env);
-		Type.Record readableRecordT = checkIsRecordType(src, AccessMode.READING, env, expr.getFirstOperand());
+		Type.Record readableRecordT = checkIsRecordType(src, env, expr.getFirstOperand());
 		//
 		Tuple<Decl.Variable> fields = readableRecordT.getFields();
 		String actualFieldName = expr.getField().get();
@@ -1754,7 +1754,7 @@ public class FlowTypeCheck {
 
 	private Type checkArrayLength(Environment env, Expr.ArrayLength expr) {
 		Type src = checkExpression(expr.getOperand(), env);
-		checkIsArrayType(src, AccessMode.READING, env, expr.getOperand());
+		checkIsArrayType(src, env, expr.getOperand());
 		return new Type.Int();
 	}
 
@@ -1786,7 +1786,7 @@ public class FlowTypeCheck {
 		Type sourceT = checkExpression(source, env);
 		Type subscriptT = checkExpression(subscript, env);
 		//
-		Type.Array sourceArrayT = checkIsArrayType(sourceT, AccessMode.READING, env, source);
+		Type.Array sourceArrayT = checkIsArrayType(sourceT, env, source);
 		checkIsSubtype(new Type.Int(), subscriptT, env, subscript);
 		//
 		return sourceArrayT.getElement();
@@ -1801,7 +1801,7 @@ public class FlowTypeCheck {
 		Type subscriptT = checkExpression(subscript, env);
 		Type valueT = checkExpression(value, env);
 		//
-		Type.Array sourceArrayT = checkIsArrayType(sourceT, AccessMode.READING, env, source);
+		Type.Array sourceArrayT = checkIsArrayType(sourceT, env, source);
 		checkIsSubtype(new Type.Int(), subscriptT, env, subscript);
 		checkIsSubtype(sourceArrayT.getElement(), valueT, env, value);
 		return sourceArrayT;
@@ -1809,7 +1809,7 @@ public class FlowTypeCheck {
 
 	private Type checkDereference(Expr.Dereference expr, Environment env) {
 		Type operandT = checkExpression(expr.getOperand(), env);
-		Type.Reference readableReferenceT = checkIsReferenceType(operandT, AccessMode.READING, env, expr.getOperand());
+		Type.Reference readableReferenceT = checkIsReferenceType(operandT, env, expr.getOperand());
 		//
 		return readableReferenceT.getElement();
 	}
@@ -1900,31 +1900,15 @@ public class FlowTypeCheck {
 	}
 
 	/**
-	 * The access mode is used to determine whether we are extracting a type in a
-	 * read or write position.
-	 *
-	 * @author David J. Peare
-	 *
-	 */
-	private enum AccessMode {
-		READING, WRITING
-	}
-
-	/**
 	 * Check whether a given type is an array type of some sort.
 	 *
 	 * @param type
 	 * @return
 	 * @throws ResolutionError
 	 */
-	private Type.Array checkIsArrayType(Type type, AccessMode mode, LifetimeRelation lifetimes, SyntacticItem element) {
+	private Type.Array checkIsArrayType(Type type, LifetimeRelation lifetimes, SyntacticItem element) {
 		try {
-			Type.Array arrT;
-			if (mode == AccessMode.READING) {
-				arrT = typeSystem.extractReadableArray(type, lifetimes);
-			} else {
-				arrT = typeSystem.extractWriteableArray(type, lifetimes);
-			}
+			Type.Array arrT = typeSystem.extractArray(type, lifetimes);
 			if (arrT == null) {
 				syntaxError("expected array type", element);
 			}
@@ -1940,15 +1924,10 @@ public class FlowTypeCheck {
 	 * @param type
 	 * @return
 	 */
-	private Type.Record checkIsRecordType(Type type, AccessMode mode, LifetimeRelation lifetimes,
+	private Type.Record checkIsRecordType(Type type, LifetimeRelation lifetimes,
 			SyntacticItem element) {
 		try {
-			Type.Record recT;
-			if (mode == AccessMode.READING) {
-				recT = typeSystem.extractReadableRecord(type, lifetimes);
-			} else {
-				recT = typeSystem.extractWriteableRecord(type, lifetimes);
-			}
+			Type.Record recT = typeSystem.extractRecord(type, lifetimes);
 			if (recT == null) {
 				syntaxError("expected record type", element);
 			}
@@ -1965,15 +1944,10 @@ public class FlowTypeCheck {
 	 * @return
 	 * @throws ResolutionError
 	 */
-	private Type.Reference checkIsReferenceType(Type type, AccessMode mode, LifetimeRelation lifetimes,
+	private Type.Reference checkIsReferenceType(Type type, LifetimeRelation lifetimes,
 			SyntacticItem element) {
 		try {
-			Type.Reference refT;
-			if (mode == AccessMode.READING) {
-				refT = typeSystem.extractReadableReference(type, lifetimes);
-			} else {
-				refT = typeSystem.extractWriteableReference(type, lifetimes);
-			}
+			Type.Reference refT = typeSystem.extractReference(type, lifetimes);
 			if (refT == null) {
 				syntaxError("expected reference type", element);
 			}
@@ -2549,7 +2523,7 @@ public class FlowTypeCheck {
 	 */
 	private Type.Callable checkIsCallableType(Type type, LifetimeRelation lifetimes, SyntacticItem element) {
 		try {
-			Type.Callable refT = typeSystem.extractReadableLambda(type, lifetimes);
+			Type.Callable refT = typeSystem.extractLambda(type, lifetimes);
 			if (refT == null) {
 				syntaxError("expected lambda type", element);
 			}
