@@ -20,7 +20,6 @@ import wyc.util.WhileyFileResolver;
 import wyil.type.SubtypeOperator.LifetimeRelation;
 import wyil.type.extractors.ReadableTypeExtractor;
 import wyil.type.extractors.WriteableTypeExtractor;
-import wyil.type.rewriters.AlgebraicTypeSimplifier;
 import wyil.type.subtyping.RelaxedSubtypeOperator;
 import wyil.type.subtyping.StrictSubtypeOperator;
 
@@ -64,7 +63,6 @@ public class TypeSystem {
 	private final TypeExtractor<Type,Object> readableTypeExtractor;
 	private final TypeExtractor<Type,Object> writeableTypeExtractor;
 //	private final TypeInvariantExtractor typeInvariantExtractor;
-	private final TypeRewriter typeSimplifier;
 
 	public TypeSystem(Build.Project project) {
 		this.resolver = new WhileyFileResolver(project);
@@ -73,7 +71,6 @@ public class TypeSystem {
 		this.readableTypeExtractor = new ReadableTypeExtractor(resolver,this);
 		this.writeableTypeExtractor = new WriteableTypeExtractor(resolver,this);
 //		this.typeInvariantExtractor = new TypeInvariantExtractor(resolver);
-		this.typeSimplifier = new AlgebraicTypeSimplifier();
 	}
 
 	public NameResolver getResolver() {
@@ -423,13 +420,5 @@ public class TypeSystem {
 	public <T extends Decl.Named> List<T> resolveAll(Name name, Class<T> kind)
 			throws ResolutionError {
 		return resolver.resolveAll(name,kind);
-	}
-
-	// ========================================================================
-	// Simplification
-	// ========================================================================
-
-	public Type simplify(Type type) {
-		return typeSimplifier.rewrite(type);
 	}
 }

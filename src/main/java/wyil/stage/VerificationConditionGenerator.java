@@ -701,7 +701,7 @@ public class VerificationConditionGenerator {
 	 * @return
 	 */
 	private Context translateVariableAssign(WhileyFile.Expr.VariableAccess lval, Expr rval,Context context) {
-		WhileyFile.Decl.Variable decl = (WhileyFile.Decl.Variable) lval.getVariableDeclaration();
+		WhileyFile.Decl.Variable decl = lval.getVariableDeclaration();
 		context = context.havoc(decl);
 		WyalFile.VariableDeclaration nVersionedVar = context.read(decl);
 		Expr.VariableAccess var = new Expr.VariableAccess(nVersionedVar);
@@ -2414,15 +2414,13 @@ public class VerificationConditionGenerator {
 				elements[i] = convert(tu.get(i), context);
 			}
 			result = new WyalFile.Type.Union(elements);
-		} else if (type instanceof Type.Intersection) {
-			Type.Intersection t = (Type.Intersection) type;
-			WyalFile.Type[] elements = new WyalFile.Type[t.size()];
-			for (int i = 0; i != t.size(); ++i) {
-				elements[i] = convert(t.get(i), context);
-			}
-			result = new WyalFile.Type.Intersection(elements);
-		} else if (type instanceof Type.Difference) {
-			Type.Difference nt = (Type.Difference) type;
+		} else if (type instanceof Type.Is) {
+			Type.Is t = (Type.Is) type;
+			WyalFile.Type lhs = convert(t.getLeftHandSide(), context);
+			WyalFile.Type rhs = convert(t.getRightHandSide(), context);
+			result = new WyalFile.Type.Intersection(new WyalFile.Type[] { lhs, rhs });
+		} else if (type instanceof Type.Isnt) {
+			Type.Isnt nt = (Type.Isnt) type;
 			WyalFile.Type lhs = convert(nt.getLeftHandSide(), context);
 			WyalFile.Type rhs = convert(nt.getRightHandSide(), context);
 			// FIXME: this is essentially a hack for now, though it is semantically
@@ -2488,16 +2486,12 @@ public class VerificationConditionGenerator {
 				}
 			}
 			return false;
-		} else if (type instanceof Type.Intersection) {
-			Type.Intersection t = (Type.Intersection) type;
-			for(int i=0;i!=t.size();++i) {
-				if(typeMayHaveInvariant(t.get(i), context)) {
-					return true;
-				}
-			}
-			return false;
-		} else if (type instanceof Type.Difference) {
-			Type.Difference nt = (Type.Difference) type;
+		} else if (type instanceof Type.Is) {
+			Type.Is t = (Type.Is) type;
+			return typeMayHaveInvariant(t.getLeftHandSide(), context)
+					|| typeMayHaveInvariant(t.getRightHandSide(), context);
+		} else if (type instanceof Type.Isnt) {
+			Type.Isnt nt = (Type.Isnt) type;
 			return typeMayHaveInvariant(nt.getLeftHandSide(), context)
 					|| typeMayHaveInvariant(nt.getRightHandSide(), context);
 		} else if (type instanceof Type.Callable) {

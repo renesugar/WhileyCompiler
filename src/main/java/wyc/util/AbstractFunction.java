@@ -270,7 +270,7 @@ public abstract class AbstractFunction<P,R> {
 		visitExpression(stmt.getCondition(), data);
 		Tuple<Stmt.Case> cases = stmt.getCases();
 		for(int i=0;i!=cases.size();++i) {
-			visitCase((Stmt.Case) cases.get(i), data);
+			visitCase(cases.get(i), data);
 		}
 		return null;
 	}
@@ -742,10 +742,10 @@ public abstract class AbstractFunction<P,R> {
 			return visitByte((Type.Byte) type, data);
 		case TYPE_int:
 			return visitInt((Type.Int) type, data);
-		case TYPE_intersection:
-			return visitIntersection((Type.Intersection) type, data);
-		case TYPE_difference:
-			return visitDifference((Type.Difference) type, data);
+		case TYPE_is:
+			return visitIs((Type.Is) type, data);
+		case TYPE_isnt:
+			return visitIsnt((Type.Isnt) type, data);
 		case TYPE_nominal:
 			return visitNominal((Type.Nominal) type, data);
 		case TYPE_null:
@@ -805,10 +805,9 @@ public abstract class AbstractFunction<P,R> {
 		return null;
 	}
 
-	public R visitIntersection(Type.Intersection type, P data) {
-		for(int i=0;i!=type.size();++i) {
-			visitType(type.get(i), data);
-		}
+	public R visitIs(Type.Is type, P data) {
+		visitType(type.getLeftHandSide(), data);
+		visitType(type.getRightHandSide(), data);
 		return null;
 	}
 
@@ -818,7 +817,7 @@ public abstract class AbstractFunction<P,R> {
 		return null;
 	}
 
-	public R visitDifference(Type.Difference type, P data) {
+	public R visitIsnt(Type.Isnt type, P data) {
 		visitType(type.getLeftHandSide(), data);
 		visitType(type.getRightHandSide(), data);
 		return null;

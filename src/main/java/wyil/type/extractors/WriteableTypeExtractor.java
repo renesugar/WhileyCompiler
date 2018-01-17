@@ -167,7 +167,7 @@ public class WriteableTypeExtractor extends AbstractTypeExtractor<Type> {
 				Decl.Variable rhsField = rhsFields.get(j);
 				Identifier rhsFieldName = rhsField.getName();
 				if (lhsFieldName.equals(rhsFieldName)) {
-					Type diff = new Type.Difference(lhsField.getType(),rhsField.getType());
+					Type diff = new Type.Isnt(lhsField.getType(),rhsField.getType());
 					fields.add(new Decl.Variable(new Tuple<>(), lhsFieldName, diff));
 					matched = true;
 					break;
@@ -317,7 +317,7 @@ public class WriteableTypeExtractor extends AbstractTypeExtractor<Type> {
 	}
 
 	protected Type.Array subtract(Type.Array lhs, Type.Array rhs) {
-		return new Type.Array(new Type.Difference(lhs.getElement(),rhs.getElement()));
+		return new Type.Array(new Type.Isnt(lhs.getElement(),rhs.getElement()));
 	}
 
 	protected Type.Array intersect(Type.Array lhs, Type.Array rhs) {
@@ -334,7 +334,7 @@ public class WriteableTypeExtractor extends AbstractTypeExtractor<Type> {
 	}
 
 	protected Type.Reference subtract(Type.Reference lhs, Type.Reference rhs) {
-		return new Type.Reference(new Type.Difference(lhs.getElement(),rhs.getElement()));
+		return new Type.Reference(new Type.Isnt(lhs.getElement(),rhs.getElement()));
 	}
 
 	protected Type.Reference intersect(Type.Reference lhs, Type.Reference rhs) {

@@ -276,7 +276,7 @@ public abstract class AbstractVisitor {
 		visitExpression(stmt.getCondition());
 		Tuple<Stmt.Case> cases = stmt.getCases();
 		for (int i = 0; i != cases.size(); ++i) {
-			visitCase((Stmt.Case) cases.get(i));
+			visitCase(cases.get(i));
 		}
 	}
 
@@ -750,11 +750,11 @@ public abstract class AbstractVisitor {
 		case TYPE_int:
 			visitInt((Type.Int) type);
 			break;
-		case TYPE_intersection:
-			visitIntersection((Type.Intersection) type);
+		case TYPE_is:
+			visitIs((Type.Is) type);
 			break;
-		case TYPE_difference:
-			visitDifference((Type.Difference) type);
+		case TYPE_isnt:
+			visitIsnt((Type.Isnt) type);
 			break;
 		case TYPE_nominal:
 			visitNominal((Type.Nominal) type);
@@ -825,10 +825,9 @@ public abstract class AbstractVisitor {
 
 	}
 
-	public void visitIntersection(Type.Intersection type) {
-		for (int i = 0; i != type.size(); ++i) {
-			visitType(type.get(i));
-		}
+	public void visitIs(Type.Is type) {
+		visitType(type.getLeftHandSide());
+		visitType(type.getRightHandSide());
 	}
 
 	public void visitMethod(Type.Method type) {
@@ -836,7 +835,7 @@ public abstract class AbstractVisitor {
 		visitTypes(type.getReturns());
 	}
 
-	public void visitDifference(Type.Difference type) {
+	public void visitIsnt(Type.Isnt type) {
 		visitType(type.getLeftHandSide());
 		visitType(type.getRightHandSide());
 	}

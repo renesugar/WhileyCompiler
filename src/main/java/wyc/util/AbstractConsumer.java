@@ -277,7 +277,7 @@ public abstract class AbstractConsumer<T> {
 		visitExpression(stmt.getCondition(), data);
 		Tuple<Stmt.Case> cases = stmt.getCases();
 		for(int i=0;i!=cases.size();++i) {
-			visitCase((Stmt.Case) cases.get(i), data);
+			visitCase(cases.get(i), data);
 		}
 	}
 
@@ -751,11 +751,11 @@ public abstract class AbstractConsumer<T> {
 		case TYPE_int:
 			visitInt((Type.Int) type, data);
 			break;
-		case TYPE_intersection:
-			visitIntersection((Type.Intersection) type, data);
+		case TYPE_is:
+			visitIs((Type.Is) type, data);
 			break;
-		case TYPE_difference:
-			visitDifference((Type.Difference) type, data);
+		case TYPE_isnt:
+			visitIsnt((Type.Isnt) type, data);
 			break;
 		case TYPE_nominal:
 			visitNominal((Type.Nominal) type, data);
@@ -826,10 +826,9 @@ public abstract class AbstractConsumer<T> {
 
 	}
 
-	public void visitIntersection(Type.Intersection type, T data) {
-		for(int i=0;i!=type.size();++i) {
-			visitType(type.get(i), data);
-		}
+	public void visitIs(Type.Is type, T data) {
+		visitType(type.getLeftHandSide(), data);
+		visitType(type.getRightHandSide(), data);
 	}
 
 	public void visitMethod(Type.Method type, T data) {
@@ -837,7 +836,7 @@ public abstract class AbstractConsumer<T> {
 		visitTypes(type.getReturns(), data);
 	}
 
-	public void visitDifference(Type.Difference type, T data) {
+	public void visitIsnt(Type.Isnt type, T data) {
 		visitType(type.getLeftHandSide(), data);
 		visitType(type.getRightHandSide(), data);
 	}

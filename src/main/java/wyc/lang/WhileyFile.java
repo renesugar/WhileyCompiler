@@ -192,8 +192,8 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 	public static final int TYPE_property = TYPE_mask + 13;
 	public static final int TYPE_invariant = TYPE_mask + 14;
 	public static final int TYPE_union = TYPE_mask + 15;
-	public static final int TYPE_intersection = TYPE_mask + 16;
-	public static final int TYPE_difference = TYPE_mask + 17;
+	public static final int TYPE_is = TYPE_mask + 16;
+	public static final int TYPE_isnt = TYPE_mask + 17;
 	public static final int TYPE_byte = TYPE_mask + 18;
 	public static final int TYPE_unresolved = TYPE_mask + 19;
 	// STATEMENTS: 01000000 (64) -- 001011111 (95)
@@ -4114,56 +4114,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 		}
 
-		/**
-		 * Parse a difference type, which is of the form:
-		 *
-		 * <pre>
-		 * DifferenceType ::= Type '-' Type
-		 * </pre>
-		 *
-		 * This corresponds roughly to set difference. For example,
-		 * <code>(int|null)-int</code> is the set <code>int|null</code> less members of
-		 * <code>int</code>. In other words, it's equivalent to <code>null</code>.
-		 *
-		 * @return
-		 */
-		public static class Difference extends AbstractSyntacticItem implements Type {
-			public Difference(Type lhs, Type rhs) {
-				super(TYPE_difference, lhs, rhs);
-			}
-
-			public Type getLeftHandSide() {
-				return (Type) get(0);
-			}
-
-			public Type getRightHandSide() {
-				return (Type) get(1);
-			}
-
-			@Override
-			public Type.Difference substitute(Map<Identifier,Identifier> binding) {
-				Type lhsBefore = getLeftHandSide();
-				Type rhsBefore = getRightHandSide();
-				Type lhsAfter = lhsBefore.substitute(binding);
-				Type rhsAfter = rhsBefore.substitute(binding);
-				if(lhsBefore == lhsAfter && rhsBefore == rhsAfter) {
-					return this;
-				} else {
-					return new Type.Difference(lhsAfter, rhsAfter);
-				}
-			}
-
-			@Override
-			public Difference clone(SyntacticItem[] operands) {
-				return new Difference((Type) operands[0], (Type) operands[1]);
-			}
-
-			@Override
-			public String toString() {
-				return braceAsNecessary(getLeftHandSide()) + "-" + braceAsNecessary(getRightHandSide());
-			}
-		}
-
 		public abstract static class Combinator extends AbstractSyntacticItem implements Type {
 			public Combinator(int kind, Type[] types) {
 				super(kind, types);
@@ -4252,39 +4202,94 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 *
 		 * @return
 		 */
-		public static class Intersection extends Combinator {
-			public Intersection(Type... types) {
-				super(TYPE_intersection, types);
+		public static class Is extends AbstractSyntacticItem implements Type {
+			public Is(Type lhs, Type rhs) {
+				super(TYPE_is, lhs, rhs);
+			}
+
+			public Type getLeftHandSide() {
+				return (Type) get(0);
+			}
+
+			public Type getRightHandSide() {
+				return (Type) get(1);
 			}
 
 			@Override
-			public Type.Intersection substitute(Map<Identifier,Identifier> binding) {
-				Type[] before = getAll();
-				Type[] after = WhileyFile.substitute(before,binding);
-				if(before == after) {
+			public Type.Is substitute(Map<Identifier,Identifier> binding) {
+				Type lhsBefore = getLeftHandSide();
+				Type rhsBefore = getRightHandSide();
+				Type lhsAfter = lhsBefore.substitute(binding);
+				Type rhsAfter = rhsBefore.substitute(binding);
+				if(lhsBefore == lhsAfter && rhsBefore == rhsAfter) {
 					return this;
 				} else {
-					return new Type.Intersection(after);
+					return new Type.Is(lhsAfter,rhsAfter);
 				}
 			}
 
 			@Override
-			public Intersection clone(SyntacticItem[] operands) {
-				return new Intersection(ArrayUtils.toArray(Type.class, operands));
+			public Is clone(SyntacticItem[] operands) {
+				return new Is((Type) operands[0], (Type) operands[1]);
 			}
 
 			@Override
 			public String toString() {
-				String r = "";
-				for (int i = 0; i != size(); ++i) {
-					if (i != 0) {
-						r += "&";
-					}
-					r += braceAsNecessary(get(i));
-				}
-				return r;
+				return braceAsNecessary(getLeftHandSide()) + " is " + braceAsNecessary(getRightHandSide());
 			}
 		}
+
+
+		/**
+		 * Parse a difference type, which is of the form:
+		 *
+		 * <pre>
+		 * DifferenceType ::= Type '-' Type
+		 * </pre>
+		 *
+		 * This corresponds roughly to set difference. For example,
+		 * <code>(int|null)-int</code> is the set <code>int|null</code> less members of
+		 * <code>int</code>. In other words, it's equivalent to <code>null</code>.
+		 *
+		 * @return
+		 */
+		public static class Isnt extends AbstractSyntacticItem implements Type {
+			public Isnt(Type lhs, Type rhs) {
+				super(TYPE_isnt, lhs, rhs);
+			}
+
+			public Type getLeftHandSide() {
+				return (Type) get(0);
+			}
+
+			public Type getRightHandSide() {
+				return (Type) get(1);
+			}
+
+			@Override
+			public Type.Isnt substitute(Map<Identifier,Identifier> binding) {
+				Type lhsBefore = getLeftHandSide();
+				Type rhsBefore = getRightHandSide();
+				Type lhsAfter = lhsBefore.substitute(binding);
+				Type rhsAfter = rhsBefore.substitute(binding);
+				if(lhsBefore == lhsAfter && rhsBefore == rhsAfter) {
+					return this;
+				} else {
+					return new Type.Isnt(lhsAfter, rhsAfter);
+				}
+			}
+
+			@Override
+			public Isnt clone(SyntacticItem[] operands) {
+				return new Isnt((Type) operands[0], (Type) operands[1]);
+			}
+
+			@Override
+			public String toString() {
+				return braceAsNecessary(getLeftHandSide()) + " isnt " + braceAsNecessary(getRightHandSide());
+			}
+		}
+
 
 		/**
 		 * Represents the set of all function values. These are pure functions,
@@ -4903,16 +4908,16 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 				return new Type.Union(ArrayUtils.toArray(Type.class, operands));
 			}
 		};
-		schema[TYPE_intersection] = new Schema(Operands.MANY, Data.ZERO, "TYPE_intersection") {
+		schema[TYPE_is] = new Schema(Operands.TWO, Data.ZERO, "TYPE_is") {
 			@Override
 			public SyntacticItem construct(int opcode, SyntacticItem[] operands, byte[] data) {
-				return new Type.Intersection(ArrayUtils.toArray(Type.class, operands));
+				return new Type.Is((Type) operands[0], (Type) operands[1]);
 			}
 		};
-		schema[TYPE_difference] = new Schema(Operands.TWO, Data.ZERO, "TYPE_difference") {
+		schema[TYPE_isnt] = new Schema(Operands.TWO, Data.ZERO, "TYPE_isnt") {
 			@Override
 			public SyntacticItem construct(int opcode, SyntacticItem[] operands, byte[] data) {
-				return new Type.Difference((Type) operands[0], (Type) operands[1]);
+				return new Type.Isnt((Type) operands[0], (Type) operands[1]);
 			}
 		};
 		schema[TYPE_byte] = new Schema(Operands.ZERO, Data.ZERO, "TYPE_byte") {

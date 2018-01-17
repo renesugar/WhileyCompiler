@@ -1161,8 +1161,8 @@ public class FlowTypeCheck {
 			Type rhsT = expr.getTestType();
 			Type lhsT = checkExpression(expr.getOperand(), environment);
 			// Sanity check operands for this type test
-			Type glbForTrueBranch = new Type.Intersection(lhsT, rhsT);
-			Type glbForFalseBranch = new Type.Difference(lhsT, rhsT);
+			Type glbForTrueBranch = new Type.Is(lhsT, rhsT);
+			Type glbForFalseBranch = new Type.Isnt(lhsT, rhsT);
 			if (typeSystem.isVoid(glbForFalseBranch, environment)) {
 				// DEFINITE TRUE CASE
 				syntaxError(errorMessage(BRANCH_ALWAYS_TAKEN), expr);
@@ -1211,9 +1211,9 @@ public class FlowTypeCheck {
 			Expr.VariableAccess var = (Expr.VariableAccess) expr;
 			Decl.Variable decl = var.getVariableDeclaration();
 			if(sign) {
-				type = new Type.Intersection(environment.getType(decl),type);
+				type = new Type.Is(environment.getType(decl),type);
 			} else {
-				type = new Type.Difference(environment.getType(decl),type);
+				type = new Type.Isnt(environment.getType(decl),type);
 			}
 			return new Pair<>(var.getVariableDeclaration(), type);
 		} else if (expr instanceof Expr.RecordAccess) {
@@ -1656,7 +1656,7 @@ public class FlowTypeCheck {
 			Type lhs = checkExpression(expr.getFirstOperand(), environment);
 			Type rhs = checkExpression(expr.getSecondOperand(), environment);
 			// Sanity check that the types of operands are actually comparable.
-			Type glb = new Type.Intersection(lhs, rhs);
+			Type glb = new Type.Is(lhs, rhs);
 			if (typeSystem.isVoid(glb, environment)) {
 				syntaxError(errorMessage(INCOMPARABLE_OPERANDS, lhs, rhs), expr);
 				return null;
@@ -2806,16 +2806,6 @@ public class FlowTypeCheck {
 				r += var.getName() + "->" + getType(var);
 			}
 			return r + "}";
-		}
-
-		private Type intersect(Type left, Type right) {
-			// FIXME: a more comprehensive simplification strategy would make sense
-			// here.
-			if (left == right || left.equals(right)) {
-				return left;
-			} else {
-				return new Type.Intersection(new Type[] { left, right });
-			}
 		}
 
 		@Override

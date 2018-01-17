@@ -112,19 +112,19 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 			return toDisjunctiveNormalForm((Type.Record) type);
 		} else if (type instanceof Type.Callable) {
 			return toDisjunctiveNormalForm((Type.Callable) type);
-		} else if (type instanceof Type.Difference) {
-			return toDisjunctiveNormalForm((Type.Difference) type);
+		} else if (type instanceof Type.Isnt) {
+			return toDisjunctiveNormalForm((Type.Isnt) type);
 		} else if (type instanceof Type.Nominal) {
 			return toDisjunctiveNormalForm((Type.Nominal) type);
 		} else if (type instanceof Type.Union) {
 			return toDisjunctiveNormalForm((Type.Union) type);
 		} else {
-			return toDisjunctiveNormalForm((Type.Intersection) type);
+			return toDisjunctiveNormalForm((Type.Is) type);
 		}
 	}
 
 	protected Disjunct toDisjunctiveNormalForm(Type.Primitive type) throws ResolutionError {
-		return new Disjunct((Type.Atom) type);
+		return new Disjunct(type);
 	}
 
 	protected Disjunct toDisjunctiveNormalForm(Type.Record type) throws ResolutionError {
@@ -143,7 +143,7 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 		return new Disjunct(type);
 	}
 
-	protected Disjunct toDisjunctiveNormalForm(Type.Difference type) throws ResolutionError {
+	protected Disjunct toDisjunctiveNormalForm(Type.Isnt type) throws ResolutionError {
 		Disjunct lhs = toDisjunctiveNormalForm(type.getLeftHandSide());
 		Disjunct rhs = toDisjunctiveNormalForm(type.getRightHandSide());
 		return lhs.intersect(rhs.negate());
@@ -164,19 +164,10 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 		return result;
 	}
 
-	protected  Disjunct toDisjunctiveNormalForm(Type.Intersection type) throws ResolutionError {
-		Disjunct result = null;
-		//
-		for (int i = 0; i != type.size(); ++i) {
-			Disjunct child = toDisjunctiveNormalForm(type.get(i));
-			if(result == null) {
-				result = child;
-			} else {
-				result = result.intersect(child);
-			}
-		}
-		//
-		return result;
+	protected  Disjunct toDisjunctiveNormalForm(Type.Is type) throws ResolutionError {
+		Disjunct lhs = toDisjunctiveNormalForm(type.getLeftHandSide());
+		Disjunct rhs = toDisjunctiveNormalForm(type.getRightHandSide());
+		return lhs.intersect(rhs);
 	}
 
 	protected Disjunct toDisjunctiveNormalForm(Type.Nominal nominal) throws ResolutionError {
@@ -224,16 +215,31 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 	 * @throws ResolutionError
 	 */
 	protected boolean isVoid(Conjunct type, LifetimeRelation lifetimes) throws ResolutionError {
-		// FIXME: I believe we could potentially be more efficient here. In
-		// particular, when Type.Union and Type.Intersection are interfaces, we
-		// can make Disjunct and Conjunct implement them, thus avoiding this
-		// unnecessary copying of data.
 		Type.Atom[] positives = Arrays.copyOf(type.positives,type.positives.length);
 		Type.Atom[] negatives = Arrays.copyOf(type.negatives,type.negatives.length);
-		Type.Intersection lhs = new Type.Intersection(positives);
+		// Check positives against positives
+		for(int i=0;i!=positives.length;++i) {
+			Type.Atom lhs = positives[i];
+			for(int j=i;j!=positives.length;++j) {
+				Type.Atom rhs = positives[j];
+				// NOTE: the following works because I happen to know that StrictSubtypeOperator
+				// treats Type.Is as an intersection (which orignally it was).
+				if(typeSystem.isVoid(new Type.Is(lhs,rhs), lifetimes)) {
+					return true;
+				}
+			}
+		}
 		Type.Union rhs = new Type.Union(negatives);
-		//
-		return typeSystem.isVoid(new Type.Difference(lhs,rhs), lifetimes);
+		// Check positives against negatives
+		for(int i=0;i!=positives.length;++i) {
+			Type.Atom lhs = positives[i];
+			if(typeSystem.isVoid(new Type.Isnt(lhs,rhs), lifetimes)) {
+				// Since, all positive atoms are intersected together we only need one of them
+				// to be void in order for the whole lot to be.
+				return true;
+			}
+		}
+		return false;
 	}
 
 	protected T construct(Conjunct type) {
@@ -312,7 +318,7 @@ public abstract class AbstractTypeExtractor<T extends Type> implements TypeExtra
 		} else if(rhs instanceof Type.Void) {
 			return rhs;
 		} else {
-			return new Type.Intersection(new Type[]{lhs,rhs});
+			return new Type.Is(lhs,rhs);
 		}
 	}
 

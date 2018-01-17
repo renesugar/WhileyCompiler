@@ -212,7 +212,7 @@ public class StrictSubtypeOperator implements SubtypeOperator {
 		case TYPE_unresolved:
 			return true;
 		case TYPE_union:
-		case TYPE_intersection: {
+		case TYPE_is: {
 			Type.Combinator c = (Type.Combinator) type;
 			for (int i = 0; i != c.size(); ++i) {
 				if (!isContractive(name, c.get(i), visited)) {
@@ -221,8 +221,8 @@ public class StrictSubtypeOperator implements SubtypeOperator {
 			}
 			return true;
 		}
-		case TYPE_difference: {
-			Type.Difference n = (Type.Difference) type;
+		case TYPE_isnt: {
+			Type.Isnt n = (Type.Isnt) type;
 			return isContractive(name, n.getLeftHandSide(), visited)
 					&& isContractive(name, n.getRightHandSide(), visited);
 		}
@@ -363,34 +363,36 @@ public class StrictSubtypeOperator implements SubtypeOperator {
 			// be processed. That is, broken down into "atomic" terms.
 			Term<Type> item = worklist.pop();
 			Type t = item.type;
-			boolean conjunct = item.sign;
 			//
 			switch (t.getOpcode()) {
-			case TYPE_union:
-				conjunct = !conjunct;
-			case TYPE_intersection: {
+			case TYPE_union: {
 				Type.Combinator ut = (Type.Combinator) t;
 				Type[] operands = ut.toArray(Type.class);
-				if (conjunct) {
+				if (!item.sign) {
 					// Conjunction
 					worklist.push(item.sign, operands, item.maximise);
 				} else {
 					// Disjunction
-					for (int i = 0; i != operands.length; ++i) {
-						Worklist tmp = (Worklist) worklist.clone();
-						tmp.push(item.sign, operands[i], item.maximise);
-						if (!isVoid((ArrayList<Atom<?>>) truths.clone(), tmp, assumptions, lifetimes)) {
-							// If a single clause of the disjunct is definitely
-							// not void, then the whole thing is not void.
-							return false;
-						}
-					}
-					return true;
+					return disjunct(item.sign, item.maximise, truths, worklist, assumptions, lifetimes, operands);
 				}
 				break;
 			}
-			case TYPE_difference: {
-				Type.Difference nt = (Type.Difference) t;
+			case TYPE_is: {
+				Type.Is nt = (Type.Is) t;
+				if(item.sign) {
+					// conjunction
+					worklist.push(item.sign, nt.getLeftHandSide(), item.maximise);
+					worklist.push(item.sign, nt.getRightHandSide(), item.maximise);
+				} else {
+					// disjunction
+					return disjunct(item.sign, item.maximise, truths, worklist, assumptions, lifetimes,
+							nt.getLeftHandSide(), nt.getRightHandSide());
+				}
+				break;
+			}
+			case TYPE_isnt: {
+				Type.Isnt nt = (Type.Isnt) t;
+				// FIXME: should handle disjunction propertly??
 				worklist.push(item.sign, nt.getLeftHandSide(), item.maximise);
 				worklist.push(!item.sign, nt.getRightHandSide(), !item.maximise);
 				break;
@@ -411,6 +413,22 @@ public class StrictSubtypeOperator implements SubtypeOperator {
 			}
 			return isVoid(truths, worklist, assumptions, lifetimes);
 		}
+	}
+
+	protected boolean disjunct(boolean sign, boolean maximise, ArrayList<Atom<?>> truths, Worklist worklist,
+			Assumptions assumptions, LifetimeRelation lifetimes, Type... operands) throws ResolutionError {
+		worklist = worklist.clone();
+
+		for (int i = 0; i != operands.length; ++i) {
+			Worklist tmp = worklist.clone();
+			tmp.push(sign, operands[i], maximise);
+			if (!isVoid((ArrayList<Atom<?>>) truths.clone(), tmp, assumptions, lifetimes)) {
+				// If a single clause of the disjunct is definitely
+				// not void, then the whole thing is not void.
+				return false;
+			}
+		}
+		return true;
 	}
 
 	protected Name[] append(Name[] lhs, Name rhs) {

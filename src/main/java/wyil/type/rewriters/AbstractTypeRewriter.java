@@ -47,12 +47,12 @@ public class AbstractTypeRewriter implements TypeRewriter {
 			return rewriteFunction((Type.Function) type);
 		} else if (type instanceof Type.Property) {
 			return rewriteMacro((Type.Property) type);
-		} else if (type instanceof Type.Difference) {
-			return rewriteDifference((Type.Difference) type);
+		} else if (type instanceof Type.Isnt) {
+			return rewriteDifference((Type.Isnt) type);
 		} else if (type instanceof Type.Union) {
 			return rewriteUnion((Type.Union) type);
 		} else {
-			return rewriteIntersection((Type.Intersection) type);
+			return rewriteIntersection((Type.Is) type);
 		}
 	}
 
@@ -137,7 +137,7 @@ public class AbstractTypeRewriter implements TypeRewriter {
 		}
 	}
 
-	protected Type rewriteDifference(Type.Difference type) {
+	protected Type rewriteDifference(Type.Isnt type) {
 		Type lhs = type.getLeftHandSide();
 		Type rhs = type.getRightHandSide();
 		Type nLhs = rewrite(lhs);
@@ -145,7 +145,7 @@ public class AbstractTypeRewriter implements TypeRewriter {
 		if (lhs == nLhs && rhs == nRhs) {
 			return type;
 		} else {
-			return new Type.Difference(nLhs, nRhs);
+			return new Type.Isnt(nLhs, nRhs);
 		}
 	}
 
@@ -160,13 +160,15 @@ public class AbstractTypeRewriter implements TypeRewriter {
 		}
 	}
 
-	protected Type rewriteIntersection(Type.Intersection utype) {
-		Type[] types = utype.getAll();
-		Type[] nTypes = rewrite(types);
-		if (types == nTypes) {
-			return utype;
+	protected Type rewriteIntersection(Type.Is type) {
+		Type lhs = type.getLeftHandSide();
+		Type rhs = type.getRightHandSide();
+		Type nLhs = rewrite(lhs);
+		Type nRhs = rewrite(rhs);
+		if (lhs == nLhs && rhs == nRhs) {
+			return type;
 		} else {
-			return new Type.Intersection(nTypes);
+			return new Type.Is(nLhs, nRhs);
 		}
 	}
 

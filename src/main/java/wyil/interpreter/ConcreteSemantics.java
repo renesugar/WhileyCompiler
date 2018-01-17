@@ -113,17 +113,15 @@ public class ConcreteSemantics implements AbstractSemantics {
 						return True;
 					}
 				}
-			} else if (type instanceof Type.Intersection) {
-				Type.Intersection t = (Type.Intersection) type;
-				for (int i=0;i!=t.size();++i) {
-					Type element = t.get(i);
-					if (this.is(element, instance) == False) {
-						return False;
-					}
+			} else if (type instanceof Type.Is) {
+				Type.Is t = (Type.Is) type;
+				Bool lhs = this.is(t.getLeftHandSide(), instance);
+				Bool rhs = this.is(t.getRightHandSide(), instance);
+				if(lhs == True && rhs == True) {
+					return True;
 				}
-				return True;
-			} else if (type instanceof Type.Difference) {
-				Type.Difference t = (Type.Difference) type;
+			} else if (type instanceof Type.Isnt) {
+				Type.Isnt t = (Type.Isnt) type;
 				Bool lhs = this.is(t.getLeftHandSide(), instance);
 				Bool rhs = this.is(t.getRightHandSide(), instance);
 				if(lhs == True && rhs == False) {
