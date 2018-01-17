@@ -1469,7 +1469,13 @@ public class LowLevelDriver<D, S, E extends S> {
 		// Finally, apply a coercion (if necessary) to ensure the result is represented
 		// correctly for the target type. Care needs to be taken when handling multiple
 		// returns.
-		return applyCoercion(target, getMultipleReturnType(type.getReturns()), result, environment);
+		if (target == Type.Void) {
+			// This handles the case for an invocation statement which discards the return
+			// value.
+			return null;
+		} else {
+			return applyCoercion(target, getMultipleReturnType(type.getReturns()), result, environment);
+		}
 	}
 
 	public E visitIndirectInvoke(Expr.IndirectInvoke expr, Type target, Environment environment) {
@@ -1941,6 +1947,9 @@ public class LowLevelDriver<D, S, E extends S> {
 		if (target.equals(actual) || actual instanceof Type.Void) {
 			// no coercion required in this case
 			return expr;
+		} else if (isSubtype(target, actual, environment) && isSubtype(actual, target, environment)) {
+			// likewise, no coercion required in this case
+			return expr;
 		} else if (target instanceof Type.Int && actual instanceof Type.Int) {
 			return applyIntCoercion((Type.Int) target, (Type.Int) actual, expr);
 		} else if (target instanceof Type.Array && actual instanceof Type.Array) {
@@ -1973,9 +1982,19 @@ public class LowLevelDriver<D, S, E extends S> {
 	}
 
 	public E applyArrayCoercion(Type.Array target, Type.Array actual, E expr, Environment environment) {
-		String name = "coercion$" + coercionIndex;
-		D body = constructArrayArrayCoercion(name,target,actual,environment);
-		return constructCoercionMethod(target,actual,expr,body);
+		try {
+			if (typeSystem.isVoid(actual.getElement(), environment)) {
+				// This is the one case where no coercion is required. This is because we assume
+				// array representations are fundamentally the same.
+				return expr;
+			} else {
+				String name = "coercion$" + coercionIndex;
+				D body = constructArrayArrayCoercion(name, target, actual, environment);
+				return constructCoercionMethod(target, actual, expr, body);
+			}
+		} catch (NameResolver.ResolutionError e) {
+			throw new IllegalArgumentException("invalid array type");
+		}
 	}
 
 	public D constructArrayArrayCoercion(String name, Type.Array target, Type.Array actual, Environment environment) {
