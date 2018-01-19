@@ -17,6 +17,7 @@ package wyil.testing;
 import org.junit.*;
 
 import wybs.lang.NameResolver;
+import wyc.lang.WhileyFile.Type;
 import wyc.util.TestUtils;
 import wyil.type.SubtypeOperator;
 import wyil.type.TypeSystem;
@@ -3752,8 +3753,8 @@ public class RecursiveSubtypeTests {
 
 	private void checkIsSubtype(String from, String to) {
 		StrictSubtypeOperator ss = new StrictSubtypeOperator(new TypeSystem(null));
-		SubtypeOperator.SemanticType ft = ss.toSemanticType(TestUtils.fromString(from));
-		SubtypeOperator.SemanticType tt = ss.toSemanticType(TestUtils.fromString(to));
+		Type ft = TestUtils.fromString(from);
+		Type tt = TestUtils.fromString(to);
 		try {
 			assertTrue(ss.isSubtype(ft,tt,null) != SubtypeOperator.Result.False);
 		} catch(NameResolver.ResolutionError e) {
@@ -3763,8 +3764,8 @@ public class RecursiveSubtypeTests {
 
 	private void checkNotSubtype(String from, String to) {
 		StrictSubtypeOperator ss = new StrictSubtypeOperator(new TypeSystem(null));
-		SubtypeOperator.SemanticType ft = ss.toSemanticType(TestUtils.fromString(from));
-		SubtypeOperator.SemanticType tt = ss.toSemanticType(TestUtils.fromString(to));
+		Type ft = TestUtils.fromString(from);
+		Type tt = TestUtils.fromString(to);
 		try {
 			assertFalse(ss.isSubtype(ft,tt,null) != SubtypeOperator.Result.False);
 		} catch(NameResolver.ResolutionError e) {

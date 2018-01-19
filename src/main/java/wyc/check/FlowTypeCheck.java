@@ -36,7 +36,6 @@ import wycc.util.ArrayUtils;
 import wyfs.lang.Path;
 import wyfs.util.Trie;
 import wyil.type.SubtypeOperator.LifetimeRelation;
-import wyil.type.SubtypeOperator.SemanticType;
 import wyil.type.TypeSystem;
 import wyc.lang.WhileyFile;
 import wyc.lang.WhileyFile.Decl;
@@ -1162,15 +1161,14 @@ public class FlowTypeCheck {
 			Expr lhs = expr.getOperand();
 			Type lhsT = checkExpression(expr.getOperand(), environment);
 			Type rhsT = expr.getTestType();
-			SemanticType lhsST = toSemanticType(lhsT);
-			SemanticType rhsST = toSemanticType(rhsT);
 			// Sanity check operands for this type test
-			SemanticType glbForTrueBranch = lhsST.intersect(rhsST);
-			SemanticType glbForFalseBranch = lhsST.subtract(rhsST);
-			if (typeSystem.isVoid(glbForFalseBranch, environment)) {
+			Type trueBranchRefinementT = applyTypeRefinement(lhsT,rhsT);
+			Type falseBranchRefinementT = applyTypeAntiRefinement(lhsT,rhsT);
+			//
+			if (typeSystem.isVoid(trueBranchRefinementT,environment)) {
 				// DEFINITE TRUE CASE
 				syntaxError(errorMessage(BRANCH_ALWAYS_TAKEN), expr);
-			} else if (typeSystem.isVoid(glbForTrueBranch, environment)) {
+			} else if (typeSystem.isVoid(falseBranchRefinementT, environment)) {
 				// DEFINITE FALSE CASE
 				syntaxError(errorMessage(INCOMPARABLE_OPERANDS, lhsT, rhsT), expr);
 			}
@@ -1178,9 +1176,14 @@ public class FlowTypeCheck {
 			Pair<Decl.Variable, Type> extraction = extractTypeTest(lhs, expr.getTestType(), environment);
 			if (extraction != null) {
 				Decl.Variable var = extraction.getFirst();
-				SemanticType refinement = toSemanticType(extraction.getSecond());
+				Type refinement = extraction.getSecond();
+				if(sign) {
+					refinement = applyTypeRefinement(var.getType(),refinement);
+				} else {
+					refinement = applyTypeAntiRefinement(var.getType(),refinement);
+				}
 				// Update the typing environment accordingly.
-				environment = environment.refineType(var, refinement, sign);
+				environment = environment.refineType(var, refinement);
 			}
 			//
 			return environment;
@@ -1255,9 +1258,17 @@ public class FlowTypeCheck {
 			for (Decl.Variable var : leftRefinements) {
 				if (rightRefinements.contains(var)) {
 					// We have a refinement on both branches
-					SemanticType leftT = left.getType(var);
-					SemanticType rightT = right.getType(var);
-					result = result.setType(var, leftT.union(rightT));
+					Type leftT = left.getType(var);
+					Type rightT = right.getType(var);
+					try {
+						Type mergeT = applyTypeRefinement(leftT, rightT);
+						result = result.refineType(var, mergeT);
+					} catch (ResolutionError e) {
+						// NOTE: in principle it should be impossible to get here since the all types in
+						// the environment should have decomposed by now anyway. But, if you're reading
+						// this, then you found some odd case I suppose ...
+						internalFailure("unreachable code reached!",leftT);
+					}
 				}
 			}
 			return result;
@@ -1570,12 +1581,7 @@ public class FlowTypeCheck {
 	 */
 	private Type checkVariable(Expr.VariableAccess expr, Environment env) {
 		Decl.Variable var = expr.getVariableDeclaration();
-		return extractRefinedType(var.getType(),env.getType(var));
-	}
-
-	private Type extractRefinedType(Type declared, SemanticType refined) {
-		// FIXME: obviously could do better here
-		return declared;
+		return env.getType(var);
 	}
 
 	private Type checkStaticVariable(Expr.StaticVariableAccess expr, Environment env) {
@@ -1643,19 +1649,20 @@ public class FlowTypeCheck {
 	}
 
 	private Type checkEqualityOperator(Expr.BinaryOperator expr, Environment environment) {
-		try {
+		//try {
 			Type lhs = checkExpression(expr.getFirstOperand(), environment);
 			Type rhs = checkExpression(expr.getSecondOperand(), environment);
 			// Sanity check that the types of operands are actually comparable.
-			SemanticType glb = toSemanticType(lhs).intersect(toSemanticType(rhs));
-			if (typeSystem.isVoid(glb, environment)) {
-				syntaxError(errorMessage(INCOMPARABLE_OPERANDS, lhs, rhs), expr);
-				return null;
-			}
+// FIXME: restore this
+//			SemanticType glb = toSemanticType(lhs).intersect(toSemanticType(rhs));
+//			if (typeSystem.isVoid(glb, environment)) {
+//				syntaxError(errorMessage(INCOMPARABLE_OPERANDS, lhs, rhs), expr);
+//				return null;
+//			}
 			return Type.Bool;
-		} catch (ResolutionError e) {
-			return syntaxError(e.getMessage(), expr);
-		}
+//		} catch (ResolutionError e) {
+//			return syntaxError(e.getMessage(), expr);
+//		}
 	}
 
 	private Type checkIntegerComparator(Expr.BinaryOperator expr, Environment environment) {
@@ -2354,8 +2361,8 @@ public class FlowTypeCheck {
 				// Number of parameters matches number of arguments. Now, check that
 				// each argument is a subtype of its corresponding parameter.
 				for (int i = 0; i != args.length; ++i) {
-					SemanticType param = toSemanticType(parameters.get(i));
-					if (!typeSystem.isRawCoerciveSubtype(param, toSemanticType(args[i]), lifetimes)) {
+					Type param = parameters.get(i);
+					if (!typeSystem.isRawCoerciveSubtype(param, args[i], lifetimes)) {
 						return false;
 					}
 				}
@@ -2505,6 +2512,104 @@ public class FlowTypeCheck {
 		}
 	}
 
+	private Type applyTypeRefinement(Type concrete, Type refinement) throws ResolutionError {
+		if(concrete instanceof Type.Union) {
+			Type.Union t = (Type.Union) concrete;
+			Type[] bounds = new Type[t.size()];
+			for(int i=0;i!=t.size();++i) {
+				bounds[i] = applyTypeRefinement(t.get(i),refinement);
+			}
+			// FIXME: removing voids here has actual implications, since it's changing the
+			// tag layout of the type.
+			bounds = ArrayUtils.removeAll(bounds, Type.Void);
+			if(bounds.length == 0) {
+				return Type.Void;
+			} else if(bounds.length == 1) {
+				return bounds[0];
+			} else {
+				return new Type.Union(bounds);
+			}
+		} else if(refinement instanceof Type.Union) {
+			throw new RuntimeException("need to implement this case!");
+		} else if(concrete instanceof Type.Nominal) {
+			Type.Nominal t = (Type.Nominal) concrete;
+			Decl.Type decl = typeSystem.resolveExactly(t.getName(), Decl.Type.class);
+			Type type = applyTypeRefinement(decl.getType(),refinement);
+			// Check whether we can retain nominal information
+			return type.equals(decl.getType()) ? concrete : type;
+		} else if(refinement instanceof Type.Nominal) {
+			Type.Nominal t = (Type.Nominal) refinement;
+			Decl.Type decl = typeSystem.resolveExactly(t.getName(), Decl.Type.class);
+			return applyTypeRefinement(concrete,decl.getType());
+		} else if(concrete.getOpcode() == refinement.getOpcode()) {
+			switch(concrete.getOpcode()) {
+			case TYPE_void:
+				return concrete;
+			case TYPE_any:
+			case TYPE_null:
+			case TYPE_bool:
+			case TYPE_byte:
+			case TYPE_int:
+				return applyPrimitiveTypeRefinement((Type.Primitive) concrete, (Type.Primitive) refinement);
+			case TYPE_array:
+				return applyArrayTypeRefinement((Type.Array) concrete, (Type.Array) refinement);
+			case TYPE_record:
+				return applyRecordTypeRefinement((Type.Record) concrete, (Type.Record) refinement);
+			case TYPE_reference:
+				return applyReferenceTypeRefinement((Type.Reference) concrete, (Type.Reference) refinement);
+			case TYPE_function:
+			case TYPE_method:
+			case TYPE_property:
+			default:
+				return applyCallableTypeRefinement((Type.Callable) concrete, (Type.Callable) refinement);
+			}
+		} else {
+			return Type.Void;
+		}
+	}
+
+	private Type applyPrimitiveTypeRefinement(Type.Primitive concrete, Type.Primitive refinement) {
+		if(concrete.getOpcode() == refinement.getOpcode()) {
+			return concrete;
+		} else {
+			return Type.Void;
+		}
+	}
+
+
+	private Type applyArrayTypeRefinement(Type.Array concrete, Type.Array refinement) throws ResolutionError {
+		Type element = applyTypeRefinement(concrete.getElement(),refinement.getElement());
+		if(element == Type.Void) {
+			return element;
+		} else {
+			return new Type.Array(element);
+		}
+	}
+
+	private Type applyRecordTypeRefinement(Type.Record concrete, Type.Record refinement) {
+		throw new RuntimeException("Implement me!");
+	}
+
+	private Type applyReferenceTypeRefinement(Type.Reference concrete, Type.Reference refinement) throws ResolutionError {
+		// FIXME: Need to thread through lifetimes.eq
+		boolean l2r = typeSystem.isRawCoerciveSubtype(concrete, refinement, null);
+		boolean r2l = typeSystem.isRawCoerciveSubtype(refinement, concrete, null);
+		if(l2r && r2l) {
+			return concrete;
+		} else {
+			return Type.Void;
+		}
+	}
+
+	private Type applyCallableTypeRefinement(Type.Callable concrete, Type.Callable refinement) {
+		throw new RuntimeException("Implement me!");
+	}
+
+	private Type applyTypeAntiRefinement(Type concrete, Type refinement) {
+		// FIXME: need to do this!
+		return concrete;
+	}
+
 	/**
 	 * Check whether the type signature for a given function or method declaration
 	 * is a super type of a given child declaration.
@@ -2526,8 +2631,8 @@ public class FlowTypeCheck {
 			// Number of parameters matches number of arguments. Now, check that
 			// each argument is a subtype of its corresponding parameter.
 			for (int i = 0; i != parentParams.size(); ++i) {
-				SemanticType parentParam = toSemanticType(parentParams.get(i));
-				SemanticType childParam = toSemanticType(childParams.get(i));
+				Type parentParam = parentParams.get(i);
+				Type childParam = childParams.get(i);
 				if (!typeSystem.isRawCoerciveSubtype(parentParam, childParam, lifetimes)) {
 					return false;
 				}
@@ -2575,24 +2680,10 @@ public class FlowTypeCheck {
 	// Helpers
 	// ==========================================================================
 
-	public SemanticType toSemanticType(Type type) {
-		return typeSystem.toSemanticType(type);
-	}
-
 	private void checkIsSubtype(Type lhs, Type rhs, LifetimeRelation lifetimes, SyntacticItem element) {
 		try {
-			if (!typeSystem.isRawCoerciveSubtype(toSemanticType(lhs), toSemanticType(rhs), lifetimes)) {
+			if (!typeSystem.isRawCoerciveSubtype(lhs, rhs, lifetimes)) {
 				syntaxError(errorMessage(SUBTYPE_ERROR, lhs, rhs), element);
-			}
-		} catch (NameResolver.ResolutionError e) {
-			syntaxError(e.getMessage(), e.getName(), e);
-		}
-	}
-
-	private void checkIsSubtype(Type lhs, SemanticType rhs, LifetimeRelation lifetimes, SyntacticItem element) {
-		try {
-			if (!typeSystem.isRawCoerciveSubtype(toSemanticType(lhs), rhs, lifetimes)) {
-				syntaxError("subtype error", element);
 			}
 		} catch (NameResolver.ResolutionError e) {
 			syntaxError(e.getMessage(), e.getName(), e);
@@ -2630,7 +2721,7 @@ public class FlowTypeCheck {
 	private void checkNonEmpty(Decl.Variable d, LifetimeRelation lifetimes) {
 		try {
 			Type type = d.getType();
-			if (typeSystem.isVoid(toSemanticType(type), lifetimes)) {
+			if (typeSystem.isVoid(type, lifetimes)) {
 				syntaxError("empty type encountered", type);
 			}
 		} catch (NameResolver.ResolutionError e) {
@@ -2777,7 +2868,7 @@ public class FlowTypeCheck {
 	 *
 	 */
 	public class Environment implements LifetimeRelation {
-		private final Map<Decl.Variable, SemanticType> refinements;
+		private final Map<Decl.Variable, Type> refinements;
 		private final Map<String, String[]> withins;
 
 		public Environment() {
@@ -2785,34 +2876,21 @@ public class FlowTypeCheck {
 			this.withins = new HashMap<>();
 		}
 
-		public Environment(Map<Decl.Variable, SemanticType> refinements, Map<String, String[]> withins) {
+		public Environment(Map<Decl.Variable, Type> refinements, Map<String, String[]> withins) {
 			this.refinements = new HashMap<>(refinements);
 			this.withins = new HashMap<>(withins);
 		}
 
-		public SemanticType getType(Decl.Variable var) {
-			SemanticType refined = refinements.get(var);
+		public Type getType(Decl.Variable var) {
+			Type refined = refinements.get(var);
 			if (refined == null) {
-				// Lazily populate the environment
-				refined = typeSystem.toSemanticType(var.getType());
-				refinements.put(var, refined);
-			}
-			return refined;
-		}
-
-		public Environment setType(Decl.Variable var, SemanticType refinement) {
-			Environment r = new Environment(this.refinements, this.withins);
-			r.refinements.put(var, refinement);
-			return r;
-		}
-
-		public Environment refineType(Decl.Variable var, SemanticType refinement, boolean sign) {
-			SemanticType type = getType(var);
-			if(sign) {
-				refinement = refinement.intersect(type);
+				return var.getType();
 			} else {
-				refinement = refinement.subtract(type);
+				return refined;
 			}
+		}
+
+		public Environment refineType(Decl.Variable var, Type refinement) {
 			Environment r = new Environment(this.refinements, this.withins);
 			r.refinements.put(var, refinement);
 			return r;

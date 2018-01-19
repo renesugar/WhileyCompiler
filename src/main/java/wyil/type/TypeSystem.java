@@ -18,7 +18,6 @@ import java.util.List;
 import wybs.util.AbstractCompilationUnit.Name;
 import wyc.util.WhileyFileResolver;
 import wyil.type.SubtypeOperator.LifetimeRelation;
-import wyil.type.SubtypeOperator.SemanticType;
 import wyil.type.subtyping.RelaxedSubtypeOperator;
 import wyil.type.subtyping.StrictSubtypeOperator;
 
@@ -71,10 +70,6 @@ public class TypeSystem {
 		return resolver;
 	}
 
-	public SemanticType toSemanticType(Type type) {
-		return strictSubtypeOperator.toSemanticType(type);
-	}
-
 	/**
 	 * <p>
 	 * Contractive types are types which cannot accept value because they have
@@ -123,7 +118,7 @@ public class TypeSystem {
 	 * @return
 	 * @throws ResolutionError
 	 */
-	public boolean isVoid(SemanticType type, LifetimeRelation lifetimes) throws ResolutionError {
+	public boolean isVoid(Type type, LifetimeRelation lifetimes) throws ResolutionError {
 		return strictSubtypeOperator.isVoid(type, lifetimes);
 	}
 
@@ -162,7 +157,7 @@ public class TypeSystem {
 	 *             one possible matching declaration, or it cannot be resolved
 	 *             to a corresponding type declaration.
 	 */
-	public boolean isRawCoerciveSubtype(SemanticType lhs, SemanticType rhs, LifetimeRelation lifetimes) throws ResolutionError {
+	public boolean isRawCoerciveSubtype(Type lhs, Type rhs, LifetimeRelation lifetimes) throws ResolutionError {
 		return coerciveSubtypeOperator.isSubtype(lhs,rhs,lifetimes) != SubtypeOperator.Result.False;
 	}
 
