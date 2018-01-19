@@ -39,6 +39,7 @@ import wyil.type.SubtypeOperator.LifetimeRelation;
 import wyil.type.SubtypeOperator.SemanticType;
 import wyil.type.TypeSystem;
 import wyc.lang.WhileyFile;
+import wyc.lang.WhileyFile.Decl;
 import wyc.lang.WhileyFile.Type;
 import wyc.task.CompileTask;
 
@@ -1393,7 +1394,11 @@ public class FlowTypeCheck {
 	 * Type check a given expression assuming an initial environment.
 	 *
 	 * @param expression
+	 *            The expression to be checked.
+	 * @param target
+	 *            The target type of this expression.
 	 * @param environment
+	 *            The environment in which this expression is to be typed
 	 * @return
 	 * @throws ResolutionError
 	 */
@@ -1565,8 +1570,12 @@ public class FlowTypeCheck {
 	 */
 	private Type checkVariable(Expr.VariableAccess expr, Environment env) {
 		Decl.Variable var = expr.getVariableDeclaration();
-		// FIXME: this is where we need to do some serious work!!
-		return env.getType(var);
+		return extractRefinedType(var.getType(),env.getType(var));
+	}
+
+	private Type extractRefinedType(Type declared, SemanticType refined) {
+		// FIXME: obviously could do better here
+		return declared;
 	}
 
 	private Type checkStaticVariable(Expr.StaticVariableAccess expr, Environment env) {
@@ -1747,7 +1756,17 @@ public class FlowTypeCheck {
 			ts[i] = checkExpression(operands.get(i), env);
 		}
 		ts = ArrayUtils.removeDuplicates(ts);
-		Type element = ts.length == 1 ? ts[0] : new Type.Union(ts);
+		Type element;
+		switch(ts.length) {
+		case 0:
+			element = Type.Void;
+			break;
+		case 1:
+			element = ts[0];
+			break;
+		default:
+			element = new Type.Union(ts);
+		}
 		return new Type.Array(element);
 	}
 
@@ -1900,20 +1919,19 @@ public class FlowTypeCheck {
 	 * @throws ResolutionError
 	 */
 	private Type.Array checkIsArrayType(Type type, AccessMode mode, LifetimeRelation lifetimes, SyntacticItem element) {
-		try {
-			Type.Array arrT;
-			if (mode == AccessMode.READING) {
-				arrT = typeSystem.extractReadableArray(type, lifetimes);
-			} else {
-				arrT = typeSystem.extractWriteableArray(type, lifetimes);
+			// FIXME: this prohibits effective array types
+		if (type instanceof Type.Array) {
+			return (Type.Array) type;
+		} else if (type instanceof Type.Nominal) {
+			Type.Nominal t = (Type.Nominal) type;
+			try {
+				Decl.Type decl = typeSystem.resolveExactly(t.getName(), Decl.Type.class);
+				return checkIsArrayType(decl.getType(), mode, lifetimes, element);
+			} catch (ResolutionError e) {
+				return syntaxError(errorMessage(RESOLUTION_ERROR, t.getName().toString()), element, e);
 			}
-			if (arrT == null) {
-				syntaxError("expected array type", element);
-			}
-			return arrT;
-		} catch (NameResolver.ResolutionError e) {
-			return syntaxError(e.getMessage(), e.getName(), e);
 		}
+		return syntaxError("expected array type", element);
 	}
 
 	/**
@@ -1924,20 +1942,19 @@ public class FlowTypeCheck {
 	 */
 	private Type.Record checkIsRecordType(Type type, AccessMode mode, LifetimeRelation lifetimes,
 			SyntacticItem element) {
-		try {
-			Type.Record recT;
-			if (mode == AccessMode.READING) {
-				recT = typeSystem.extractReadableRecord(type, lifetimes);
-			} else {
-				recT = typeSystem.extractWriteableRecord(type, lifetimes);
+		// FIXME: this prohibits effective record types
+		if (type instanceof Type.Record) {
+			return (Type.Record) type;
+		} else if (type instanceof Type.Nominal) {
+			Type.Nominal t = (Type.Nominal) type;
+			try {
+				Decl.Type decl = typeSystem.resolveExactly(t.getName(), Decl.Type.class);
+				return checkIsRecordType(decl.getType(), mode, lifetimes, element);
+			} catch (ResolutionError e) {
+				return syntaxError(errorMessage(RESOLUTION_ERROR, t.getName().toString()), element, e);
 			}
-			if (recT == null) {
-				syntaxError("expected record type", element);
-			}
-			return recT;
-		} catch (NameResolver.ResolutionError e) {
-			return syntaxError(e.getMessage(), e.getName(), e);
 		}
+		return syntaxError("expected record type", element);
 	}
 
 	/**
@@ -1949,20 +1966,19 @@ public class FlowTypeCheck {
 	 */
 	private Type.Reference checkIsReferenceType(Type type, AccessMode mode, LifetimeRelation lifetimes,
 			SyntacticItem element) {
-		try {
-			Type.Reference refT;
-			if (mode == AccessMode.READING) {
-				refT = typeSystem.extractReadableReference(type, lifetimes);
-			} else {
-				refT = typeSystem.extractWriteableReference(type, lifetimes);
+		// FIXME: this prohibits effective reference types
+		if (type instanceof Type.Reference) {
+			return (Type.Reference) type;
+		} else if (type instanceof Type.Nominal) {
+			Type.Nominal t = (Type.Nominal) type;
+			try {
+				Decl.Type decl = typeSystem.resolveExactly(t.getName(), Decl.Type.class);
+				return checkIsReferenceType(decl.getType(), mode, lifetimes, element);
+			} catch (ResolutionError e) {
+				return syntaxError(errorMessage(RESOLUTION_ERROR, t.getName().toString()), element, e);
 			}
-			if (refT == null) {
-				syntaxError("expected reference type", element);
-			}
-			return refT;
-		} catch (NameResolver.ResolutionError e) {
-			return syntaxError(e.getMessage(), e.getName(), e);
 		}
+		return syntaxError("expected reference type", element);
 	}
 
 	/**
@@ -2530,15 +2546,19 @@ public class FlowTypeCheck {
 	 * @return
 	 */
 	private Type.Callable checkIsCallableType(Type type, LifetimeRelation lifetimes, SyntacticItem element) {
-		try {
-			Type.Callable refT = typeSystem.extractReadableLambda(type, lifetimes);
-			if (refT == null) {
-				syntaxError("expected lambda type", element);
+		// FIXME: this prohibits effective callable types
+		if (type instanceof Type.Callable) {
+			return (Type.Callable) type;
+		} else if (type instanceof Type.Nominal) {
+			Type.Nominal t = (Type.Nominal) type;
+			try {
+				Decl.Type decl = typeSystem.resolveExactly(t.getName(), Decl.Type.class);
+				return checkIsCallableType(decl.getType(), lifetimes, element);
+			} catch (ResolutionError e) {
+				return syntaxError(errorMessage(RESOLUTION_ERROR, t.getName().toString()), element, e);
 			}
-			return refT;
-		} catch (NameResolver.ResolutionError e) {
-			return syntaxError(e.getMessage(), e.getName(), e);
 		}
+		return syntaxError("expected lambda type", element);
 	}
 
 	private void checkOperand(Type type, Expr operand, Environment environment) {
@@ -2563,6 +2583,16 @@ public class FlowTypeCheck {
 		try {
 			if (!typeSystem.isRawCoerciveSubtype(toSemanticType(lhs), toSemanticType(rhs), lifetimes)) {
 				syntaxError(errorMessage(SUBTYPE_ERROR, lhs, rhs), element);
+			}
+		} catch (NameResolver.ResolutionError e) {
+			syntaxError(e.getMessage(), e.getName(), e);
+		}
+	}
+
+	private void checkIsSubtype(Type lhs, SemanticType rhs, LifetimeRelation lifetimes, SyntacticItem element) {
+		try {
+			if (!typeSystem.isRawCoerciveSubtype(toSemanticType(lhs), rhs, lifetimes)) {
+				syntaxError("subtype error", element);
 			}
 		} catch (NameResolver.ResolutionError e) {
 			syntaxError(e.getMessage(), e.getName(), e);

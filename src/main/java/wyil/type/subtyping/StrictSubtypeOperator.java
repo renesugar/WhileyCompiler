@@ -311,7 +311,6 @@ public class StrictSubtypeOperator implements SubtypeOperator {
 
 	@Override
 	public Result isSubtype(SemanticType parent, SemanticType child, LifetimeRelation lifetimes) throws ResolutionError {
-		System.out.println("CHECKING: " + parent + " :> " + child);
 		if(parent instanceof Disjunct && child instanceof Disjunct) {
 			// FIXME: we can do better in some situations here. For example, if we
 			// have the same nominal types they can cancel each other.
@@ -1109,19 +1108,18 @@ public class StrictSubtypeOperator implements SubtypeOperator {
 
 		@Override
 		public Disjunct union(SemanticType type) {
-			return null;
+			return union((Disjunct) type);
 		}
 
 		@Override
 		public Disjunct intersect(SemanticType type) {
-			// TODO Auto-generated method stub
-			return null;
+			return intersect((Disjunct) type);
 		}
 
 		@Override
 		public Disjunct subtract(SemanticType type) {
-			// TODO Auto-generated method stub
-			return null;
+			Disjunct rhs = (Disjunct) type;
+			return intersect(rhs.negate());
 		}
 
 		public Disjunct union(Disjunct other) {
