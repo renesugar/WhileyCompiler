@@ -36,10 +36,14 @@ import wycc.util.ArrayUtils;
 import wyfs.lang.Path;
 import wyfs.util.Trie;
 import wyil.type.SubtypeOperator.LifetimeRelation;
+import wyil.type.TypeRefinement;
 import wyil.type.TypeSystem;
+import wyil.type.refinement.NegativeTypeRefinement;
+import wyil.type.refinement.PositiveTypeRefinement;
 import wyc.lang.WhileyFile;
 import wyc.lang.WhileyFile.Decl;
 import wyc.lang.WhileyFile.Type;
+import wyc.lang.WhileyFile.Decl.Variable;
 import wyc.task.CompileTask;
 
 import static wyc.lang.WhileyFile.*;
@@ -102,10 +106,14 @@ public class FlowTypeCheck {
 
 	private final CompileTask builder;
 	private final TypeSystem typeSystem;
+	private final TypeRefinement posTypeRefiner;
+	private final TypeRefinement negTypeRefiner;
 
 	public FlowTypeCheck(CompileTask builder) {
 		this.builder = builder;
 		this.typeSystem = builder.getTypeSystem();
+		this.posTypeRefiner = new PositiveTypeRefinement(typeSystem);
+		this.negTypeRefiner = new NegativeTypeRefinement(typeSystem);
 	}
 
 	// =========================================================================
@@ -1162,8 +1170,8 @@ public class FlowTypeCheck {
 			Type lhsT = checkExpression(expr.getOperand(), environment);
 			Type rhsT = expr.getTestType();
 			// Sanity check operands for this type test
-			Type trueBranchRefinementT = applyTypeRefinement(lhsT,rhsT);
-			Type falseBranchRefinementT = applyTypeAntiRefinement(lhsT,rhsT);
+			Type trueBranchRefinementT = posTypeRefiner.refine(lhsT,rhsT);
+			Type falseBranchRefinementT = negTypeRefiner.refine(lhsT,rhsT);
 			//
 			if (typeSystem.isVoid(trueBranchRefinementT,environment)) {
 				// DEFINITE TRUE CASE
@@ -1178,9 +1186,9 @@ public class FlowTypeCheck {
 				Decl.Variable var = extraction.getFirst();
 				Type refinement = extraction.getSecond();
 				if(sign) {
-					refinement = applyTypeRefinement(var.getType(),refinement);
+					refinement = posTypeRefiner.refine(var.getType(),refinement);
 				} else {
-					refinement = applyTypeAntiRefinement(var.getType(),refinement);
+					refinement = negTypeRefiner.refine(var.getType(),refinement);
 				}
 				// Update the typing environment accordingly.
 				environment = environment.refineType(var, refinement);
@@ -1260,15 +1268,8 @@ public class FlowTypeCheck {
 					// We have a refinement on both branches
 					Type leftT = left.getType(var);
 					Type rightT = right.getType(var);
-					try {
-						Type mergeT = applyTypeRefinement(leftT, rightT);
-						result = result.refineType(var, mergeT);
-					} catch (ResolutionError e) {
-						// NOTE: in principle it should be impossible to get here since the all types in
-						// the environment should have decomposed by now anyway. But, if you're reading
-						// this, then you found some odd case I suppose ...
-						internalFailure("unreachable code reached!",leftT);
-					}
+					Type mergeT = posTypeRefiner.refine(leftT, rightT);
+					result = result.refineType(var, mergeT);
 				}
 			}
 			return result;
@@ -2512,103 +2513,6 @@ public class FlowTypeCheck {
 		}
 	}
 
-	private Type applyTypeRefinement(Type concrete, Type refinement) throws ResolutionError {
-		if(concrete instanceof Type.Union) {
-			Type.Union t = (Type.Union) concrete;
-			Type[] bounds = new Type[t.size()];
-			for(int i=0;i!=t.size();++i) {
-				bounds[i] = applyTypeRefinement(t.get(i),refinement);
-			}
-			// FIXME: removing voids here has actual implications, since it's changing the
-			// tag layout of the type.
-			bounds = ArrayUtils.removeAll(bounds, Type.Void);
-			if(bounds.length == 0) {
-				return Type.Void;
-			} else if(bounds.length == 1) {
-				return bounds[0];
-			} else {
-				return new Type.Union(bounds);
-			}
-		} else if(refinement instanceof Type.Union) {
-			throw new RuntimeException("need to implement this case!");
-		} else if(concrete instanceof Type.Nominal) {
-			Type.Nominal t = (Type.Nominal) concrete;
-			Decl.Type decl = typeSystem.resolveExactly(t.getName(), Decl.Type.class);
-			Type type = applyTypeRefinement(decl.getType(),refinement);
-			// Check whether we can retain nominal information
-			return type.equals(decl.getType()) ? concrete : type;
-		} else if(refinement instanceof Type.Nominal) {
-			Type.Nominal t = (Type.Nominal) refinement;
-			Decl.Type decl = typeSystem.resolveExactly(t.getName(), Decl.Type.class);
-			return applyTypeRefinement(concrete,decl.getType());
-		} else if(concrete.getOpcode() == refinement.getOpcode()) {
-			switch(concrete.getOpcode()) {
-			case TYPE_void:
-				return concrete;
-			case TYPE_any:
-			case TYPE_null:
-			case TYPE_bool:
-			case TYPE_byte:
-			case TYPE_int:
-				return applyPrimitiveTypeRefinement((Type.Primitive) concrete, (Type.Primitive) refinement);
-			case TYPE_array:
-				return applyArrayTypeRefinement((Type.Array) concrete, (Type.Array) refinement);
-			case TYPE_record:
-				return applyRecordTypeRefinement((Type.Record) concrete, (Type.Record) refinement);
-			case TYPE_reference:
-				return applyReferenceTypeRefinement((Type.Reference) concrete, (Type.Reference) refinement);
-			case TYPE_function:
-			case TYPE_method:
-			case TYPE_property:
-			default:
-				return applyCallableTypeRefinement((Type.Callable) concrete, (Type.Callable) refinement);
-			}
-		} else {
-			return Type.Void;
-		}
-	}
-
-	private Type applyPrimitiveTypeRefinement(Type.Primitive concrete, Type.Primitive refinement) {
-		if(concrete.getOpcode() == refinement.getOpcode()) {
-			return concrete;
-		} else {
-			return Type.Void;
-		}
-	}
-
-
-	private Type applyArrayTypeRefinement(Type.Array concrete, Type.Array refinement) throws ResolutionError {
-		Type element = applyTypeRefinement(concrete.getElement(),refinement.getElement());
-		if(element == Type.Void) {
-			return element;
-		} else {
-			return new Type.Array(element);
-		}
-	}
-
-	private Type applyRecordTypeRefinement(Type.Record concrete, Type.Record refinement) {
-		throw new RuntimeException("Implement me!");
-	}
-
-	private Type applyReferenceTypeRefinement(Type.Reference concrete, Type.Reference refinement) throws ResolutionError {
-		// FIXME: Need to thread through lifetimes.eq
-		boolean l2r = typeSystem.isRawCoerciveSubtype(concrete, refinement, null);
-		boolean r2l = typeSystem.isRawCoerciveSubtype(refinement, concrete, null);
-		if(l2r && r2l) {
-			return concrete;
-		} else {
-			return Type.Void;
-		}
-	}
-
-	private Type applyCallableTypeRefinement(Type.Callable concrete, Type.Callable refinement) {
-		throw new RuntimeException("Implement me!");
-	}
-
-	private Type applyTypeAntiRefinement(Type concrete, Type refinement) {
-		// FIXME: need to do this!
-		return concrete;
-	}
 
 	/**
 	 * Check whether the type signature for a given function or method declaration

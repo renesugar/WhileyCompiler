@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 /**
- * Provides core algorithms for rewriting types, usually for the purposes of
- * simplification. Such simplifications are typically to aid human readability
- * of produced error messages and warnings (amongst other things).
+ * Provides core algorithms for refining types.
  *
  * @author David J. Pearce
  */
-package wyil.type.rewriters;
+package wyil.type.refinement;
