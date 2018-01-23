@@ -89,7 +89,7 @@ public class PositiveTypeRefinement implements TypeRefinement {
 	 * @throws ResolutionError
 	 */
 	private Type refineNominal(Type.Nominal concrete, Type refinement) throws ResolutionError {
-		Type.Nominal t = (Type.Nominal) concrete;
+		Type.Nominal t = concrete;
 		Decl.Type decl = typeSystem.resolveExactly(t.getName(), Decl.Type.class);
 		Type type = refine(decl.getType(), refinement);
 		// Check whether we can retain nominal information
@@ -107,7 +107,7 @@ public class PositiveTypeRefinement implements TypeRefinement {
 	 * @throws ResolutionError
 	 */
 	private Type refineNominal(Type concrete, Type.Nominal refinement) throws ResolutionError {
-		Type.Nominal t = (Type.Nominal) refinement;
+		Type.Nominal t = refinement;
 		Decl.Type decl = typeSystem.resolveExactly(t.getName(), Decl.Type.class);
 		return refine(concrete, decl.getType());
 	}
@@ -123,7 +123,7 @@ public class PositiveTypeRefinement implements TypeRefinement {
 	 * @throws ResolutionError
 	 */
 	private Type refineUnion(Type.Union concrete, Type refinement) throws ResolutionError {
-		Type.Union t = (Type.Union) concrete;
+		Type.Union t = concrete;
 		Type[] originalBounds = t.getAll();
 		Type[] bounds = originalBounds;
 		// The difficult with this loop is ensuring that we know when nothing has
@@ -178,7 +178,8 @@ public class PositiveTypeRefinement implements TypeRefinement {
 			Type r = refine(concrete,refinement.get(i));
 			if(r != Type.Void) {
 				// FIXME: this is clearly broken since there can in principle be multiple
-				// refinements for a given type.
+				// refinements for a given type. To resolve this requires some kind of merge
+				// operator.
 				return r;
 			}
 		}
@@ -231,18 +232,23 @@ public class PositiveTypeRefinement implements TypeRefinement {
 	}
 
 	private Type refineReference(Type.Reference concrete, Type.Reference refinement) throws ResolutionError {
-		// FIXME: Need to thread through lifetimes.eq
-		boolean l2r = typeSystem.isRawCoerciveSubtype(concrete, refinement, null);
-		boolean r2l = typeSystem.isRawCoerciveSubtype(refinement, concrete, null);
-		if(l2r && r2l) {
-			return concrete;
+		Type before = concrete.getElement();
+		Type after = refine(before, refinement.getElement());
+		if(before == after) {
+			return before;
 		} else {
 			return Type.Void;
 		}
 	}
 
-	private Type refineCallable(Type.Callable concrete, Type.Callable refinement) {
-		throw new RuntimeException("Implement me!");
+	private Type refineCallable(Type.Callable concrete, Type.Callable refinement) throws ResolutionError {
+		Type before = concrete.getElement();
+		Type after = refine(before, refinement.getElement());
+		if(before == after) {
+			return before;
+		} else {
+			return Type.Void;
+		}
 	}
 
 	private <T> T internalFailure(String msg, SyntacticItem e) {
