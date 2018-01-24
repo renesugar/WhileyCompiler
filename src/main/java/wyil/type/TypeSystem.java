@@ -118,7 +118,7 @@ public class TypeSystem {
 	 * @return
 	 * @throws ResolutionError
 	 */
-	public boolean isVoid(Type type, LifetimeRelation lifetimes) throws ResolutionError {
+	public boolean isVoid(SemanticType type, LifetimeRelation lifetimes) throws ResolutionError {
 		return strictSubtypeOperator.isVoid(type, lifetimes);
 	}
 
@@ -157,7 +157,7 @@ public class TypeSystem {
 	 *             one possible matching declaration, or it cannot be resolved
 	 *             to a corresponding type declaration.
 	 */
-	public boolean isRawCoerciveSubtype(Type lhs, Type rhs, LifetimeRelation lifetimes) throws ResolutionError {
+	public boolean isRawCoerciveSubtype(SemanticType lhs, Type rhs, LifetimeRelation lifetimes) throws ResolutionError {
 		return coerciveSubtypeOperator.isSubtype(lhs,rhs,lifetimes) != SubtypeOperator.Result.False;
 	}
 

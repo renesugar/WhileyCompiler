@@ -256,5 +256,4 @@ public class PositiveTypeRefinement implements TypeRefinement {
 		CompilationUnit cu = (CompilationUnit) e.getHeap();
 		throw new InternalFailure(msg, cu.getEntry(), e);
 	}
-
 }
