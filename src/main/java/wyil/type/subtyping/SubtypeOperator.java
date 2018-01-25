@@ -96,19 +96,19 @@ public class SubtypeOperator {
 	 *             possible matching declaration, or it cannot be resolved to a
 	 *             corresponding type declaration.
 	 */
-	public Result isSubtype(SemanticType lhs, SemanticType rhs, LifetimeRelation lifetimes) throws ResolutionError {
+	public boolean isSubtype(SemanticType lhs, SemanticType rhs, LifetimeRelation lifetimes) throws ResolutionError {
 		boolean max = emptinessTest.isVoid(lhs, EmptinessTest.PositiveMax, rhs, EmptinessTest.PositiveMax, lifetimes);
 		//
 		// FIXME: I don't think this logic is correct yet for some reason.
 		if (!max) {
-			return Result.False;
+			return false;
 		} else {
 			boolean min = emptinessTest.isVoid(lhs, EmptinessTest.PositiveMin, rhs, EmptinessTest.PositiveMin,
 					lifetimes);
 			if (min) {
-				return Result.True;
+				return true;
 			} else {
-				return Result.Unknown;
+				return false;
 			}
 		}
 	}
