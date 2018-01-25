@@ -36,7 +36,6 @@ import wyal.lang.WyalFile.Declaration.Named;
 import wyfs.lang.Path;
 import wyfs.lang.Path.ID;
 import wyfs.util.Trie;
-import wyil.type.TypeSystem;
 import wyc.lang.WhileyFile;
 import wyc.task.Wyil2WyalBuilder;
 import wyc.util.AbstractConsumer;
@@ -114,13 +113,11 @@ import static wyc.lang.WhileyFile.*;
  *
  */
 public class VerificationConditionGenerator {
-	private final Wyil2WyalBuilder builder;
-	private final TypeSystem typeSystem;
+	private final NameResolver resolver;
 	private final WyalFile wyalFile;
 
-	public VerificationConditionGenerator(WyalFile wyalFile, Wyil2WyalBuilder builder) {
-		this.builder = builder;
-		this.typeSystem = new TypeSystem(builder.project());
+	public VerificationConditionGenerator(WyalFile wyalFile, NameResolver resolver) {
+		this.resolver = resolver;
 		this.wyalFile = wyalFile;
 	}
 
@@ -1738,7 +1735,7 @@ public class VerificationConditionGenerator {
 		try {
 			// FIXME: yes, this is a hack to temporarily handle the transition from
 			// constants to static variables.
-			WhileyFile.Decl.StaticVariable decl = typeSystem.resolveExactly(expr.getName(), WhileyFile.Decl.StaticVariable.class);
+			WhileyFile.Decl.StaticVariable decl = resolver.resolveExactly(expr.getName(), WhileyFile.Decl.StaticVariable.class);
 			return translateExpression(decl.getInitialiser(), null, environment);
 		} catch (ResolutionError e) {
 			throw new RuntimeException(e);
@@ -2540,10 +2537,15 @@ public class VerificationConditionGenerator {
 	 * @return
 	 * @throws Exception
 	 */
-	public WhileyFile.Decl.Callable lookupFunctionOrMethodOrProperty(WhileyFile.Name name, Type.Callable fun,
+	public WhileyFile.Decl.Callable lookupFunctionOrMethodOrProperty(WhileyFile.Name name, Type.Callable signature,
 			WhileyFile.Stmt stmt) throws NameResolver.ResolutionError {
 		//
-		return typeSystem.resolveExactly(name, fun, WhileyFile.Decl.Callable.class);
+		for (WhileyFile.Decl.Callable decl : resolver.resolveAll(name, WhileyFile.Decl.Callable.class)) {
+			if (decl.getType().equals(signature)) {
+				return decl;
+			}
+		}
+		return null;
 	}
 
 	/**

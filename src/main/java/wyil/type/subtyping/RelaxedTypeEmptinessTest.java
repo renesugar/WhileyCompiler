@@ -14,11 +14,11 @@
 package wyil.type.subtyping;
 
 
+import wybs.lang.NameResolver;
 import wybs.lang.NameResolver.ResolutionError;
 import wybs.util.AbstractCompilationUnit.Tuple;
 import wyc.lang.WhileyFile.Decl;
 import wyc.lang.WhileyFile.Type;
-import wyil.type.TypeSystem;
 
 /**
  * <p>
@@ -42,15 +42,15 @@ import wyil.type.TypeSystem;
  * layout and, hence, many more conversions between layouts are required.
  * </p>
  *
- * @see StrictSubtypeOperator
+ * @see TypeEmptinessTest
  *
  * @author David J. Pearce
  *
  */
-public class RelaxedSubtypeOperator extends StrictSubtypeOperator {
+public class RelaxedTypeEmptinessTest extends TypeEmptinessTest {
 
-	public RelaxedSubtypeOperator(TypeSystem typeSystem) {
-		super(typeSystem);
+	public RelaxedTypeEmptinessTest(NameResolver resolver) {
+		super(resolver);
 	}
 
 	@Override

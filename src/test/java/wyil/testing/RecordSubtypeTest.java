@@ -19,9 +19,9 @@ import org.junit.*;
 import wybs.lang.NameResolver;
 import wyc.lang.WhileyFile.Type;
 import wyc.util.TestUtils;
-import wyil.type.SubtypeOperator;
 import wyil.type.TypeSystem;
-import wyil.type.subtyping.StrictSubtypeOperator;
+import wyil.type.subtyping.SubtypeOperator;
+import wyil.type.subtyping.TypeEmptinessTest;
 
 import static org.junit.Assert.*;
 import static wyc.lang.WhileyFile.Type;
@@ -1793,7 +1793,7 @@ public class RecordSubtypeTest {
 	@Test public void test_5776() { checkIsSubtype("{int f2}|int","{int f2}|int"); }
 
 	private void checkIsSubtype(String from, String to) {
-		StrictSubtypeOperator ss = new StrictSubtypeOperator(new TypeSystem(null));
+		TypeEmptinessTest ss = new TypeEmptinessTest(new TypeSystem(null));
 		Type ft = TestUtils.fromString(from);
 		Type tt = TestUtils.fromString(to);
 		try {
@@ -1804,7 +1804,7 @@ public class RecordSubtypeTest {
 	}
 
 	private void checkNotSubtype(String from, String to) {
-		StrictSubtypeOperator ss = new StrictSubtypeOperator(new TypeSystem(null));
+		TypeEmptinessTest ss = new TypeEmptinessTest(new TypeSystem(null));
 		Type ft = TestUtils.fromString(from);
 		Type tt = TestUtils.fromString(to);
 		try {

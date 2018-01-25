@@ -22,9 +22,9 @@ import wybs.lang.NameResolver;
 import static wyc.lang.WhileyFile.Type;
 
 import wyc.util.TestUtils;
-import wyil.type.SubtypeOperator;
 import wyil.type.TypeSystem;
-import wyil.type.subtyping.StrictSubtypeOperator;
+import wyil.type.subtyping.SubtypeOperator;
+import wyil.type.subtyping.TypeEmptinessTest;
 
 public class ArraySubtypeTest {
 	@Test public void test_52() { checkIsSubtype("null","null"); }
@@ -285,7 +285,7 @@ public class ArraySubtypeTest {
 	@Test public void test_2500() { checkIsSubtype("int[]|int","int[]|int"); }
 
 	private void checkIsSubtype(String from, String to) {
-		StrictSubtypeOperator ss = new StrictSubtypeOperator(new TypeSystem(null));
+		TypeEmptinessTest ss = new TypeEmptinessTest(new TypeSystem(null));
 		Type ft = TestUtils.fromString(from);
 		Type tt = TestUtils.fromString(to);
 		try {
@@ -296,7 +296,7 @@ public class ArraySubtypeTest {
 	}
 
 	private void checkNotSubtype(String from, String to) {
-		StrictSubtypeOperator ss = new StrictSubtypeOperator(new TypeSystem(null));
+		TypeEmptinessTest ss = new TypeEmptinessTest(new TypeSystem(null));
 		Type ft = TestUtils.fromString(from);
 		Type tt = TestUtils.fromString(to);
 		try {

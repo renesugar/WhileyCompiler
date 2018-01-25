@@ -35,11 +35,11 @@ import wyc.util.ErrorMessages;
 import wycc.util.ArrayUtils;
 import wyfs.lang.Path;
 import wyfs.util.Trie;
-import wyil.type.SubtypeOperator.LifetimeRelation;
 import wyil.type.TypeRefinement;
-import wyil.type.TypeSystem;
 import wyil.type.refinement.NegativeTypeRefinement;
 import wyil.type.refinement.PositiveTypeRefinement;
+import wyil.type.subtyping.EmptinessTest.LifetimeRelation;
+import wyil.type.subtyping.SubtypeOperator;
 import wyc.lang.WhileyFile;
 import wyc.lang.WhileyFile.Decl;
 import wyc.lang.WhileyFile.Type;
@@ -105,13 +105,14 @@ import static wyc.util.ErrorMessages.*;
 public class FlowTypeCheck {
 
 	private final CompileTask builder;
-	private final TypeSystem typeSystem;
+	private final NameResolver typeSystem;
+	private final SubtypeOperator subtypeOperator;
 	private final TypeRefinement posTypeRefiner;
 	private final TypeRefinement negTypeRefiner;
 
 	public FlowTypeCheck(CompileTask builder) {
 		this.builder = builder;
-		this.typeSystem = builder.getTypeSystem();
+		this.typeSystem = builder.getNameResolver();
 		this.posTypeRefiner = new PositiveTypeRefinement(typeSystem);
 		this.negTypeRefiner = new NegativeTypeRefinement(typeSystem);
 	}

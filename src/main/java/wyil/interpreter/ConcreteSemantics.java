@@ -17,11 +17,11 @@ import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.Comparator;
 
+import wybs.lang.NameResolver;
 import wybs.lang.NameResolver.ResolutionError;
 import wybs.util.AbstractCompilationUnit.Identifier;
 import wybs.util.AbstractCompilationUnit.Tuple;
 import wyil.interpreter.Interpreter.CallStack;
-import wyil.type.TypeSystem;
 
 import static wyc.lang.WhileyFile.*;
 
@@ -97,8 +97,8 @@ public class ConcreteSemantics implements AbstractSemantics {
 				return False;
 			} else if (type instanceof Type.Nominal) {
 				Type.Nominal nom = (Type.Nominal) type;
-				TypeSystem types = instance.getTypeSystem();
-				Decl.Type decl = types.resolveExactly(nom.getName(), Decl.Type.class);
+				NameResolver resolver = instance.getNameResolver();
+				Decl.Type decl = resolver.resolveExactly(nom.getName(), Decl.Type.class);
 				Decl.Variable var = decl.getVariableDeclaration();
 				if(is(var.getType(), instance) == True) {
 					Tuple<Expr> invariant = decl.getInvariant();

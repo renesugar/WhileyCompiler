@@ -19,9 +19,6 @@ import java.util.BitSet;
 import java.util.HashSet;
 
 import wycc.util.Pair;
-import wyil.type.SubtypeOperator;
-import wyil.type.TypeSystem;
-import wyil.type.SubtypeOperator.LifetimeRelation;
 import wybs.lang.NameID;
 import wybs.lang.NameResolver;
 import wybs.lang.NameResolver.ResolutionError;
@@ -180,100 +177,21 @@ import static wyc.lang.WhileyFile.Name;
  * @author David J. Pearce
  *
  */
-public class StrictSubtypeOperator implements SubtypeOperator {
-	protected final TypeSystem typeSystem;
+public class TypeEmptinessTest implements EmptinessTest<Type> {
+	protected final NameResolver resolver;
 
-	public StrictSubtypeOperator(TypeSystem typeSystem) {
-		this.typeSystem = typeSystem;
+	public TypeEmptinessTest(NameResolver resolver) {
+		this.resolver = resolver;
 	}
 
 	@Override
-	public boolean isContractive(NameID nid, Type type) throws ResolutionError {
-		HashSet<NameID> visited = new HashSet<>();
-		return isContractive(nid, type, visited);
-	}
-
-	private boolean isContractive(NameID name, Type type, HashSet<NameID> visited) throws ResolutionError {
-		switch (type.getOpcode()) {
-		case TYPE_void:
-		case TYPE_any:
-		case TYPE_null:
-		case TYPE_bool:
-		case TYPE_int:
-		case TYPE_staticreference:
-		case TYPE_reference:
-		case TYPE_array:
-		case TYPE_record:
-		case TYPE_function:
-		case TYPE_method:
-		case TYPE_property:
-		case TYPE_invariant:
-		case TYPE_byte:
-		case TYPE_unresolved:
-			return true;
-		case TYPE_union: {
-			Type.Union c = (Type.Union) type;
-			for (int i = 0; i != c.size(); ++i) {
-				if (!isContractive(name, c.get(i), visited)) {
-					return false;
-				}
-			}
-			return true;
-		}
-		default:
-		case TYPE_nominal: {
-			Type.Nominal n = (Type.Nominal) type;
-			Decl.Type decl = typeSystem.resolveExactly(n.getName(), Decl.Type.class);
-			NameID nid = decl.getQualifiedName().toNameID();
-			if (nid.equals(name)) {
-				// We have identified a non-contract type.
-				return false;
-			} else if (visited.contains(nid)) {
-				// NOTE: this identifies a type (other than the one we are looking for) which is
-				// not contractive. It may seem odd then, that we pretend it is in fact
-				// contractive. The reason for this is simply that we cannot tell here with the
-				// type we are interested in is contractive or not. Thus, to improve the error
-				// messages reported we ignore this non-contractiveness here (since we know
-				// it'll be caught down the track anyway).
-				return true;
-			} else {
-				visited.add(nid);
-				return isContractive(name, decl.getType(), visited);
-			}
-		}
-		}
-	}
-
-	@Override
-	public boolean isVoid(Type type, LifetimeRelation lifetimes) throws ResolutionError {
+	public boolean isVoid(Type lhs, EmptinessTest.State lhsState, Type rhs, EmptinessTest.State rhsState,
+			LifetimeRelation lifetimes) throws ResolutionError {
+		// FIXME: this is really temporary for now.
+		Term<?> lhsTerm = new Term<>(lhsState.sign, lhs, lhsState.maximise);
+		Term<?> rhsTerm = new Term<>(rhsState.sign, rhs, rhsState.maximise);
 		HashSetAssumptions assumptions = new HashSetAssumptions();
-		Term<?> term = new Term<>(true, type, true);
-		// FIXME: lifetime relation cannot be null here
-		return isVoidTerm(term, term, assumptions, lifetimes);
-	}
-
-	@Override
-	public Result isSubtype(Type parent, Type child, LifetimeRelation lifetimes) throws ResolutionError {
-		// FIXME: we can do better in some situations here. For example, if we
-		// have the same nominal types they can cancel each other.
-		HashSetAssumptions assumptions = new HashSetAssumptions();
-		Term<?> lhsMaxTerm = new Term<>(false, parent, true);
-		Term<?> rhsMaxTerm = new Term<>(true, child, true);
-		boolean max = isVoidTerm(lhsMaxTerm, rhsMaxTerm, assumptions, lifetimes);
-		//
-		// FIXME: I don't think this logic is correct yet for some reason.
-		if (!max) {
-			return Result.False;
-		} else {
-			Term<?> lhsMinTerm = new Term<>(false, parent, false);
-			Term<?> rhsMinTerm = new Term<>(true, child, false);
-			boolean min = isVoidTerm(lhsMinTerm, rhsMinTerm, assumptions, lifetimes);
-			if (min) {
-				return Result.True;
-			} else {
-				return Result.Unknown;
-			}
-		}
+		return isVoidTerm(lhsTerm, rhsTerm, assumptions, lifetimes);
 	}
 
 	protected boolean isVoidTerm(Term<?> lhs, Term<?> rhs, Assumptions assumptions, LifetimeRelation lifetimes)
@@ -383,7 +301,7 @@ public class StrictSubtypeOperator implements SubtypeOperator {
 			}
 			case TYPE_nominal: {
 				Type.Nominal nom = (Type.Nominal) t;
-				Decl.Type decl = typeSystem.resolveExactly(nom.getName(), Decl.Type.class);
+				Decl.Type decl = resolver.resolveExactly(nom.getName(), Decl.Type.class);
 				if (item.maximise || decl.getInvariant().size() == 0) {
 					worklist.push(item.sign, decl.getType(), item.maximise);
 				} else if (item.sign) {
