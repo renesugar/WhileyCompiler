@@ -4,7 +4,7 @@ import wybs.lang.NameResolver;
 import wybs.lang.NameResolver.ResolutionError;
 import wyc.lang.WhileyFile.Decl;
 import wyc.lang.WhileyFile.Type;
-import wyil.type.SemanticType;
+import wyc.lang.WhileyFile.SemanticType;
 
 public class SemanticEmptinessTest implements EmptinessTest<SemanticType> {
 	private final NameResolver resolver;
@@ -51,22 +51,38 @@ public class SemanticEmptinessTest implements EmptinessTest<SemanticType> {
 	private boolean isVoidUnion(SemanticType.Union lhs, State lhsState, SemanticType rhs, State rhsState,
 			LifetimeRelation lifetimes) throws ResolutionError {
 		if (lhsState.sign) {
-			return isVoid(lhs.getLeftHandSide(), lhsState, rhs, rhsState, lifetimes)
-					|| isVoid(lhs.getRightHandSide(), lhsState, rhs, rhsState, lifetimes);
+			for(int i=0;i!=lhs.size();++i) {
+				if(isVoid(lhs.get(i), lhsState, rhs, rhsState, lifetimes)) {
+					return false;
+				}
+			}
+			return true;
 		} else {
-			return isVoid(lhs.getLeftHandSide(), lhsState, rhs, rhsState, lifetimes)
-					&& isVoid(lhs.getRightHandSide(), lhsState, rhs, rhsState, lifetimes);
+			for(int i=0;i!=lhs.size();++i) {
+				if(isVoid(lhs.get(i), lhsState, rhs, rhsState, lifetimes)) {
+					return true;
+				}
+			}
+			return false;
 		}
 	}
 
 	private boolean isVoidIntersection(SemanticType.Intersection lhs, State lhsState, SemanticType rhs, State rhsState,
 			LifetimeRelation lifetimes) throws ResolutionError {
 		if (lhsState.sign) {
-			return isVoid(lhs.getLeftHandSide(), lhsState, rhs, rhsState, lifetimes)
-					&& isVoid(lhs.getRightHandSide(), lhsState, rhs, rhsState, lifetimes);
+			for(int i=0;i!=lhs.size();++i) {
+				if(isVoid(lhs.get(i), lhsState, rhs, rhsState, lifetimes)) {
+					return true;
+				}
+			}
+			return false;
 		} else {
-			return isVoid(lhs.getLeftHandSide(), lhsState, rhs, rhsState, lifetimes)
-					|| isVoid(lhs.getRightHandSide(), lhsState, rhs, rhsState, lifetimes);
+			for(int i=0;i!=lhs.size();++i) {
+				if(isVoid(lhs.get(i), lhsState, rhs, rhsState, lifetimes)) {
+					return false;
+				}
+			}
+			return true;
 		}
 	}
 

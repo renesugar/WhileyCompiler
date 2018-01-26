@@ -23,8 +23,10 @@ import wybs.lang.SyntacticItem.Operands;
 import wybs.lang.SyntacticItem.Schema;
 import wybs.util.AbstractCompilationUnit;
 import wybs.util.AbstractSyntacticItem;
+import wybs.util.AbstractCompilationUnit.Identifier;
 import wyc.io.WhileyFileLexer;
 import wyc.io.WhileyFileParser;
+import wyc.lang.WhileyFile.Type;
 import wyc.util.AbstractConsumer;
 import wycc.util.ArrayUtils;
 import wyfs.lang.Content;
@@ -182,20 +184,27 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 	public static final int TYPE_null = TYPE_mask + 2;
 	public static final int TYPE_bool = TYPE_mask + 3;
 	public static final int TYPE_int = TYPE_mask + 4;
-	public static final int TYPE_nominal = TYPE_mask + 6;
-	public static final int TYPE_reference = TYPE_mask + 7;
-	public static final int TYPE_staticreference = TYPE_mask + 8;
-	public static final int TYPE_array = TYPE_mask + 9;
-	public static final int TYPE_record = TYPE_mask + 10;
-	public static final int TYPE_function = TYPE_mask + 11;
-	public static final int TYPE_method = TYPE_mask + 12;
-	public static final int TYPE_property = TYPE_mask + 13;
-	public static final int TYPE_invariant = TYPE_mask + 14;
-	public static final int TYPE_union = TYPE_mask + 15;
-	public static final int TYPEX_intersection = TYPE_mask + 16;
-	public static final int TYPEX_difference = TYPE_mask + 17;
-	public static final int TYPE_byte = TYPE_mask + 18;
-	public static final int TYPE_unresolved = TYPE_mask + 19;
+	public static final int TYPE_nominal = TYPE_mask + 5;
+	public static final int TYPE_reference = TYPE_mask + 6;
+	public static final int TYPE_staticreference = TYPE_mask + 7;
+	public static final int TYPE_array = TYPE_mask + 8;
+	public static final int TYPE_record = TYPE_mask + 9;
+	public static final int TYPE_function = TYPE_mask + 10;
+	public static final int TYPE_method = TYPE_mask + 11;
+	public static final int TYPE_property = TYPE_mask + 12;
+	public static final int TYPE_invariant = TYPE_mask + 13;
+	public static final int TYPE_union = TYPE_mask + 14;
+	public static final int TYPE_byte = TYPE_mask + 15;
+	public static final int TYPE_unresolved = TYPE_mask + 16;
+	public static final int SEMTYPE_leaf = TYPE_mask + 17;
+	public static final int SEMTYPE_reference = TYPE_mask + 18;
+	public static final int SEMTYPE_staticreference = TYPE_mask + 19;
+	public static final int SEMTYPE_array = TYPE_mask + 20;
+	public static final int SEMTYPE_record = TYPE_mask + 21;
+	public static final int SEMTYPE_field = TYPE_mask + 22;
+	public static final int SEMTYPE_union = TYPE_mask + 23;
+	public static final int SEMTYPE_intersection = TYPE_mask + 24;
+	public static final int SEMTYPE_difference = TYPE_mask + 25;
 	// STATEMENTS: 01000000 (64) -- 001011111 (95)
 	public static final int STMT_mask = 0b01000000;
 	public static final int STMT_block = STMT_mask + 0;
@@ -4133,7 +4142,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 *
 		 * @return
 		 */
-		public static class Union extends AbstractSyntacticItem implements Type, TypeCombinator {
+		public static class Union extends AbstractSyntacticItem implements Type {
 			public Union(Type... types) {
 				super(TYPE_union, types);
 			}
@@ -4403,99 +4412,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		}
 	}
 
-	public interface TypeCombinator extends SyntacticItem {
-
-		/**
-		 * Represents an intersection type, which is of the form:
-		 *
-		 * <pre>
-		 * IntersectionType ::= BaseType ('&' BaseType)*
-		 * </pre>
-		 *
-		 * Intersection types are used to unify types together. For example, the type
-		 * <code>{int x, int y}&MyType</code> represents the type which is both an
-		 * instanceof of <code>{int x, int y}</code> and an instance of
-		 * <code>MyType</code>.
-		 *
-		 * Represents the intersection of one or more types together. For example, the
-		 * intersection of <code>T1</code> and <code>T2</code> is <code>T1&T2</code>.
-		 * Furthermore, any variable of this type must be both an instanceof
-		 * <code>T1</code> and an instanceof <code>T2</code>.
-		 *
-		 * @return
-		 */
-		public static class Intersection extends AbstractSyntacticItem implements TypeCombinator {
-			public Intersection(Type... types) {
-				super(TYPEX_intersection, types);
-			}
-
-			@Override
-			public Type get(int i) {
-				return (Type) super.get(i);
-			}
-
-			@Override
-			public Type[] getAll() {
-				return (Type[]) super.getAll();
-			}
-
-			@Override
-			public Intersection clone(SyntacticItem[] operands) {
-				return new Intersection(ArrayUtils.toArray(Type.class, operands));
-			}
-
-			@Override
-			public String toString() {
-				String r = "";
-				for (int i = 0; i != size(); ++i) {
-					if (i != 0) {
-						r += "&";
-					}
-					r += braceAsNecessary(get(i));
-				}
-				return r;
-			}
-		}
-
-
-		/**
-		 * Parse a difference type, which is of the form:
-		 *
-		 * <pre>
-		 * DifferenceType ::= Type '-' Type
-		 * </pre>
-		 *
-		 * This corresponds roughly to set difference. For example,
-		 * <code>(int|null)-int</code> is the set <code>int|null</code> less members of
-		 * <code>int</code>. In other words, it's equivalent to <code>null</code>.
-		 *
-		 * @return
-		 */
-		public static class Difference extends AbstractSyntacticItem implements TypeCombinator {
-			public Difference(Type lhs, Type rhs) {
-				super(TYPEX_difference, lhs, rhs);
-			}
-
-			public Type getLeftHandSide() {
-				return (Type) get(0);
-			}
-
-			public Type getRightHandSide() {
-				return (Type) get(1);
-			}
-
-			@Override
-			public Difference clone(SyntacticItem[] operands) {
-				return new Difference((Type) operands[0], (Type) operands[1]);
-			}
-
-			@Override
-			public String toString() {
-				return braceAsNecessary(getLeftHandSide()) + "-" + braceAsNecessary(getRightHandSide());
-			}
-		}
-	}
-
 	private static Type[] substitute(Type[] types, Map<Identifier,Identifier> binding) {
 		Type[] nTypes = types;
 		for(int i=0;i!=nTypes.length;++i) {
@@ -4528,6 +4444,371 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		}
 		//
 		return types;
+	}
+
+	// ============================================================
+	// Semantic Types
+	// ============================================================
+
+	public interface SemanticType extends SyntacticItem {
+
+		public static final SemanticType Void = new SemanticType.Leaf(Type.Void);
+		public static final SemanticType Null = new SemanticType.Leaf(Type.Null);
+		public static final SemanticType Bool = new SemanticType.Leaf(Type.Bool);
+		public static final SemanticType Byte = new SemanticType.Leaf(Type.Byte);
+		public static final SemanticType Int = new SemanticType.Leaf(Type.Int);
+
+		public SemanticType.Array asArray();
+
+		public SemanticType.Record asRecord();
+
+		public SemanticType.Reference asReference();
+
+		public Type.Callable asCallable();
+
+		public SemanticType union(SemanticType t);
+
+		public SemanticType intersect(SemanticType t);
+
+		public SemanticType negate(SemanticType t);
+
+		public static abstract class AbstractSemanticType extends AbstractSyntacticItem implements SemanticType {
+
+			public AbstractSemanticType(int opcode, SyntacticItem... operands) {
+				super(opcode,operands);
+			}
+
+			@Override
+			public Array asArray() {
+				return null;
+			}
+
+			@Override
+			public Record asRecord() {
+				return null;
+			}
+
+			@Override
+			public Reference asReference() {
+				return null;
+			}
+
+			@Override
+			public Type.Callable asCallable() {
+				return null;
+			}
+
+			@Override
+			public SemanticType union(SemanticType t) {
+				return null;
+			}
+
+			@Override
+			public SemanticType intersect(SemanticType t) {
+				return null;
+			}
+
+			@Override
+			public SemanticType negate(SemanticType t) {
+				return null;
+			}
+
+		}
+
+		public static class Leaf extends AbstractSemanticType {
+			public Leaf(Type operand) {
+				super(SEMTYPE_leaf, operand);
+			}
+
+			public Type getType() {
+				return (Type) get(0);
+			}
+
+			@Override
+			public Array asArray() {
+				// TODO Auto-generated method stub
+				return null;
+			}
+
+			@Override
+			public Record asRecord() {
+				// TODO Auto-generated method stub
+				return null;
+			}
+
+			@Override
+			public Reference asReference() {
+				// TODO Auto-generated method stub
+				return null;
+			}
+
+			@Override
+			public SyntacticItem clone(SyntacticItem[] operands) {
+				return new Leaf((Type) operands[0]);
+			}
+		}
+
+		public static class Reference extends AbstractSemanticType {
+			public Reference(SemanticType element) {
+				super(SEMTYPE_staticreference,element);
+			}
+
+			public Reference(SemanticType element, Identifier lifetime) {
+				super(SEMTYPE_reference,element,lifetime);
+			}
+
+			public boolean hasLifetime() {
+				return opcode == SEMTYPE_reference;
+			}
+
+			public SemanticType getElement() {
+				return (SemanticType) get(0);
+			}
+
+			public Identifier getLifetime() {
+				return (Identifier) get(1);
+			}
+
+			@Override
+			public Reference asReference() {
+				return this;
+			}
+
+			@Override
+			public SyntacticItem clone(SyntacticItem[] operands) {
+				if(operands.length == 1) {
+					return new Reference((SemanticType) operands[0]);
+				} else {
+					return new Reference((SemanticType) operands[0], (Identifier) operands[1]);
+				}
+			}
+		}
+
+		public static class Array extends AbstractSemanticType {
+
+			public Array(SemanticType element) {
+				super(SEMTYPE_array,element);
+			}
+
+			public SemanticType getElement() {
+				return (SemanticType) get(0);
+			}
+
+			@Override
+			public Array asArray() {
+				return this;
+			}
+
+			@Override
+			public SyntacticItem clone(SyntacticItem[] operands) {
+				return new Array((SemanticType) operands[0]);
+			}
+		}
+
+		public static class Field extends AbstractSyntacticItem {
+
+			public Field(Identifier name, SemanticType type) {
+				super(SEMTYPE_field,name,type);
+			}
+
+			public Identifier getName() {
+				return (Identifier) get(0);
+			}
+
+			public SemanticType getType() {
+				return (SemanticType) get(1);
+			}
+
+			@Override
+			public SyntacticItem clone(SyntacticItem[] operands) {
+				return new Field((Identifier) operands[0], (SemanticType) operands[1]);
+			}
+		}
+
+		public static class Record extends AbstractSemanticType {
+			public Record(boolean isOpen, Tuple<Field> fields) {
+				super(SEMTYPE_record, new Value.Bool(isOpen), fields);
+			}
+
+			public boolean isOpen() {
+				Value.Bool flag = (Value.Bool) get(0);
+				return flag.get();
+			}
+
+			public Tuple<Field> getFields() {
+				return (Tuple<Field>) get(1);
+			}
+
+			public SemanticType getField(Identifier fieldName) {
+				Tuple<Field> fields = getFields();
+				for (int i = 0; i != fields.size(); ++i) {
+					Field vd = fields.get(i);
+					Identifier declaredFieldName = vd.getName();
+					if (declaredFieldName.equals(fieldName)) {
+						return vd.getType();
+					}
+				}
+				return null;
+			}
+
+			@Override
+			public Record asRecord() {
+				return this;
+			}
+
+			@Override
+			public SyntacticItem clone(SyntacticItem[] operands) {
+				boolean isOpen = ((Value.Bool)operands[0]).get();
+				return new Record(isOpen,(Tuple<Field>) operands[1]);
+			}
+		}
+
+		public static class Union extends AbstractSemanticType {
+			public Union(SemanticType... types) {
+				super(SEMTYPE_union, types);
+			}
+
+			@Override
+			public SemanticType get(int i)  {
+				return (SemanticType) super.get(i);
+			}
+
+			@Override
+			public SemanticType[] getAll() {
+				return (SemanticType[]) super.getAll();
+			}
+
+			@Override
+			public Array asArray() {
+				// TODO Auto-generated method stub
+				return null;
+			}
+
+			@Override
+			public Record asRecord() {
+				// TODO Auto-generated method stub
+				return null;
+			}
+
+			@Override
+			public Reference asReference() {
+				// TODO Auto-generated method stub
+				return null;
+			}
+
+			@Override
+			public SyntacticItem clone(SyntacticItem[] operands) {
+				return new Union(ArrayUtils.toArray(SemanticType.class, operands));
+			}
+
+
+			@Override
+			public String toString() {
+				String r = "";
+				for (int i = 0; i != size(); ++i) {
+					if (i != 0) {
+						r += "|";
+					}
+					r += braceAsNecessary(get(i));
+				}
+				return r;
+			}
+		}
+
+		public static class Intersection extends AbstractSemanticType {
+			public Intersection(SemanticType... types) {
+				super(SEMTYPE_intersection, types);
+			}
+
+			@Override
+			public SemanticType get(int i)  {
+				return (SemanticType) super.get(i);
+			}
+
+			@Override
+			public SemanticType[] getAll() {
+				return (SemanticType[]) super.getAll();
+			}
+
+			@Override
+			public Array asArray() {
+				// TODO Auto-generated method stub
+				return null;
+			}
+
+			@Override
+			public Record asRecord() {
+				// TODO Auto-generated method stub
+				return null;
+			}
+
+			@Override
+			public Reference asReference() {
+				// TODO Auto-generated method stub
+				return null;
+			}
+
+			@Override
+			public SyntacticItem clone(SyntacticItem[] operands) {
+				return new Intersection(ArrayUtils.toArray(SemanticType.class, operands));
+			}
+
+
+			@Override
+			public String toString() {
+				String r = "";
+				for (int i = 0; i != size(); ++i) {
+					if (i != 0) {
+						r += "&";
+					}
+					r += braceAsNecessary(get(i));
+				}
+				return r;
+			}
+		}
+
+		public static class Difference extends AbstractSemanticType {
+
+			public Difference(SemanticType lhs, SemanticType rhs) {
+				super(SEMTYPE_difference,lhs,rhs);
+			}
+
+			public SemanticType getLeftHandSide()  {
+				return (SemanticType) get(0);
+			}
+
+			public SemanticType getRightHandSide()  {
+				return (SemanticType) get(1);
+			}
+
+			@Override
+			public Array asArray() {
+				// TODO Auto-generated method stub
+				return null;
+			}
+
+			@Override
+			public Record asRecord() {
+				// TODO Auto-generated method stub
+				return null;
+			}
+
+			@Override
+			public Reference asReference() {
+				// TODO Auto-generated method stub
+				return null;
+			}
+
+			@Override
+			public SyntacticItem clone(SyntacticItem[] operands) {
+				return new Difference((SemanticType) operands[0],(SemanticType) operands[1]);
+			}
+
+			@Override
+			public String toString() {
+				return braceAsNecessary(getLeftHandSide()) + "-" + braceAsNecessary(getRightHandSide());
+			}
+		}
 	}
 
 	// ============================================================
@@ -4664,6 +4945,23 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 	private static boolean needsBraces(Type type) {
 		if (type instanceof Type.Atom || type instanceof Type.Nominal) {
 			return false;
+		} else {
+			return true;
+		}
+	}
+
+	private static String braceAsNecessary(SemanticType type) {
+		String str = type.toString();
+		if (needsBraces(type)) {
+			return "(" + str + ")";
+		} else {
+			return str;
+		}
+	}
+
+	private static boolean needsBraces(SemanticType type) {
+		if (type instanceof SemanticType.Leaf) {
+			return needsBraces(((SemanticType.Leaf)type).getType());
 		} else {
 			return true;
 		}
@@ -4885,18 +5183,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			@Override
 			public SyntacticItem construct(int opcode, SyntacticItem[] operands, byte[] data) {
 				return new Type.Union(ArrayUtils.toArray(Type.class, operands));
-			}
-		};
-		schema[TYPEX_intersection] = new Schema(Operands.MANY, Data.ZERO, "TYPE_intersection") {
-			@Override
-			public SyntacticItem construct(int opcode, SyntacticItem[] operands, byte[] data) {
-				return new TypeCombinator.Intersection(ArrayUtils.toArray(Type.class, operands));
-			}
-		};
-		schema[TYPEX_difference] = new Schema(Operands.TWO, Data.ZERO, "TYPE_difference") {
-			@Override
-			public SyntacticItem construct(int opcode, SyntacticItem[] operands, byte[] data) {
-				return new TypeCombinator.Difference((Type) operands[0], (Type) operands[1]);
 			}
 		};
 		schema[TYPE_byte] = new Schema(Operands.ZERO, Data.ZERO, "TYPE_byte") {

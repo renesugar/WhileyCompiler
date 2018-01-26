@@ -35,13 +35,10 @@ import wyc.util.ErrorMessages;
 import wycc.util.ArrayUtils;
 import wyfs.lang.Path;
 import wyfs.util.Trie;
-import wyil.type.SemanticType;
-import wyil.type.TypeRefinement;
-import wyil.type.refinement.NegativeTypeRefinement;
-import wyil.type.refinement.PositiveTypeRefinement;
 import wyil.type.subtyping.EmptinessTest.LifetimeRelation;
+import wyil.type.subtyping.RelaxedTypeEmptinessTest;
+import wyil.type.subtyping.SemanticEmptinessTest;
 import wyil.type.subtyping.SubtypeOperator;
-import static wyil.type.SemanticType.*;
 import wyc.lang.WhileyFile;
 import wyc.lang.WhileyFile.Decl;
 import wyc.lang.WhileyFile.Type;
@@ -110,10 +107,11 @@ public class FlowTypeCheck {
 	private final NameResolver resolver;
 	private final SubtypeOperator subtypeOperator;
 
-	public FlowTypeCheck(CompileTask builder, SubtypeOperator subtypeOperator) {
+	public FlowTypeCheck(CompileTask builder) {
 		this.builder = builder;
 		this.resolver = builder.getNameResolver();
-		this.subtypeOperator = subtypeOperator;
+		this.subtypeOperator = new SubtypeOperator(resolver,
+				new SemanticEmptinessTest(resolver, new RelaxedTypeEmptinessTest(resolver)));
 	}
 
 	// =========================================================================
@@ -440,7 +438,7 @@ public class FlowTypeCheck {
 	private Environment checkAssign(Stmt.Assign stmt, Environment environment, EnclosingScope scope)
 			throws IOException {
 		Tuple<LVal> lvals = stmt.getLeftHandSide();
-		List<wycc.util.Pair<Expr, SemanticType>> rvals = checkMultiExpressions(stmt.getRightHandSide(), environment);
+		List<Pair<Expr, SemanticType>> rvals = checkMultiExpressions(stmt.getRightHandSide(), environment);
 		// Check the number of expected values matches the number of values
 		// produced by the right-hand side.
 		if (lvals.size() < rvals.size()) {
@@ -452,8 +450,8 @@ public class FlowTypeCheck {
 		// matches the value produced.
 		for (int i = 0; i != rvals.size(); ++i) {
 			SemanticType lval = checkLVal(lvals.get(i), environment);
-			wycc.util.Pair<Expr, SemanticType> rval = rvals.get(i);
-			checkIsSubtype(lval, rval.second(), environment, rval.first());
+			Pair<Expr, SemanticType> rval = rvals.get(i);
+			checkIsSubtype(lval, rval.getSecond(), environment, rval.getFirst());
 		}
 		return environment;
 	}
@@ -614,7 +612,7 @@ public class FlowTypeCheck {
 	private Environment checkReturn(Stmt.Return stmt, Environment environment, EnclosingScope scope)
 			throws IOException {
 		// Type check the operands for the return statement (if any)
-		List<wycc.util.Pair<Expr, SemanticType>> returns = checkMultiExpressions(stmt.getReturns(), environment);
+		List<Pair<Expr, SemanticType>> returns = checkMultiExpressions(stmt.getReturns(), environment);
 		// Determine the set of return types for the enclosing function or
 		// method. This then allows us to check the given operands are
 		// appropriate subtypes.
@@ -630,16 +628,16 @@ public class FlowTypeCheck {
 			// In this case, a return statement was provided with too many
 			// return values compared with the number declared for the enclosing
 			// method. Therefore, identify first unnecessary return
-			Expr extra = returns.get(types.size()).first();
+			Expr extra = returns.get(types.size()).getFirst();
 			// And, generate syntax error for that
 			syntaxError("too many return values provided", extra);
 		}
 		// Number of return values match number declared for enclosing
 		// function/method. Now, check they have appropriate types.
 		for (int i = 0; i != types.size(); ++i) {
-			wycc.util.Pair<Expr, SemanticType> p = returns.get(i);
+			Pair<Expr, SemanticType> p = returns.get(i);
 			SemanticType t = toSemanticType(types.get(i));
-			checkIsSubtype(t, p.second(), environment, p.first());
+			checkIsSubtype(t, p.getSecond(), environment, p.getFirst());
 		}
 		// Return bottom as following environment to signal that control-flow
 		// cannot continue here. Thus, any following statements will encounter
@@ -1379,12 +1377,12 @@ public class FlowTypeCheck {
 	 * @param expressions
 	 * @param environment
 	 */
-	public List<wycc.util.Pair<Expr, SemanticType>> checkMultiExpressions(Tuple<Expr> expressions, Environment environment) {
-		ArrayList<wycc.util.Pair<Expr, SemanticType>> rs = new ArrayList<>();
+	public List<Pair<Expr, SemanticType>> checkMultiExpressions(Tuple<Expr> expressions, Environment environment) {
+		ArrayList<Pair<Expr, SemanticType>> rs = new ArrayList<>();
 		for (Expr expression : expressions) {
 			SemanticType[] types = checkMultiExpression(expression, environment);
 			for (int i = 0; i != types.length; ++i) {
-				rs.add(new wycc.util.Pair<>(expression, types[i]));
+				rs.add(new Pair<>(expression, types[i]));
 			}
 		}
 		return rs;
@@ -1724,10 +1722,10 @@ public class FlowTypeCheck {
 		SemanticType val = checkExpression(expr.getSecondOperand(), env);
 		SemanticType.Record readableRecordT = checkIsRecordType(src, AccessMode.READING, env, expr.getFirstOperand());
 		//
-		SemanticType.Field[] fields = readableRecordT.getFields();
+		Tuple<SemanticType.Field> fields = readableRecordT.getFields();
 		String actualFieldName = expr.getField().get();
-		for (int i = 0; i != fields.length; ++i) {
-			SemanticType.Field vd = fields[i];
+		for (int i = 0; i != fields.size(); ++i) {
+			SemanticType.Field vd = fields.get(i);
 			String declaredFieldName = vd.getName().get();
 			if (declaredFieldName.equals(actualFieldName)) {
 				// Matched the field type
@@ -1749,7 +1747,7 @@ public class FlowTypeCheck {
 			decls[i] = new SemanticType.Field(field, fieldType);
 		}
 		//
-		return new SemanticType.Record(false, decls);
+		return new SemanticType.Record(false, new Tuple<>(decls));
 	}
 
 	private SemanticType checkArrayLength(Environment env, Expr.ArrayLength expr) {
@@ -1877,7 +1875,7 @@ public class FlowTypeCheck {
 		// Update with inferred signature
 		expr.setType(expr.getHeap().allocate(signature));
 		// Done
-		return signature;
+		return toSemanticType(signature);
 	}
 
 	/**
@@ -2050,7 +2048,7 @@ public class FlowTypeCheck {
 						+ foundCandidatesString(candidates), name);
 			}
 			// Select the most precise signature from the candidate bindings
-			Binding selected = selectCallableCandidate(name, bindings, lifetimes, arguments);
+			Binding selected = selectCallableCandidate(name, bindings, lifetimes);
 			// Sanity check result
 			if (selected == null) {
 				return syntaxError(errorMessage(AMBIGUOUS_RESOLUTION, foundBindingsString(bindings)), name);
@@ -2303,13 +2301,20 @@ public class FlowTypeCheck {
 		// Construct the type visitor
 		AbstractVisitor visitor = new AbstractVisitor() {
 			@Override
-			public void visitReference(Type.Reference ref) {
+			public void visitTypeReference(Type.Reference ref) {
+				super.visitTypeReference(ref);
+				lifetimes.add(ref.getLifetime());
+			}
+
+			@Override
+			public void visitSemanticTypeReference(SemanticType.Reference ref) {
+				super.visitSemanticTypeReference(ref);
 				lifetimes.add(ref.getLifetime());
 			}
 		};
 		// Apply visitor to each argument
 		for (int i = 0; i != args.length; ++i) {
-			visitor.visitType(args[i]);
+			visitor.visitSemanticType(args[i]);
 		}
 		// Done
 		return lifetimes.toArray(new Identifier[lifetimes.size()]);
@@ -2390,8 +2395,7 @@ public class FlowTypeCheck {
 	 * @param args
 	 * @return
 	 */
-	private Binding selectCallableCandidate(Name name, List<Binding> candidates, LifetimeRelation lifetimes,
-			Type... args) {
+	private Binding selectCallableCandidate(Name name, List<Binding> candidates, LifetimeRelation lifetimes) {
 		Binding best = null;
 		Type.Callable bestType = null;
 		boolean bestValidWinner = false;
@@ -2399,9 +2403,6 @@ public class FlowTypeCheck {
 		for (int i = 0; i != candidates.size(); ++i) {
 			Binding candidate = candidates.get(i);
 			Type.Callable candidateType = candidate.getConcreteType();
-			// Check whether the given candidate is a real candidate or not. A
-			// if (isApplicable(candidate, lifetimes, args)) {
-			// Yes, this candidate is applicable.
 			if (best == null) {
 				// No other candidates are applicable so far. Hence, this
 				// one is automatically promoted to the best seen so far.
@@ -2440,13 +2441,13 @@ public class FlowTypeCheck {
 		return bestValidWinner ? best : null;
 	}
 
-	private String parameterString(Type... paramTypes) {
+	private String parameterString(SemanticType... paramTypes) {
 		String paramStr = "(";
 		boolean firstTime = true;
 		if (paramTypes == null) {
 			paramStr += "...";
 		} else {
-			for (Type t : paramTypes) {
+			for (SemanticType t : paramTypes) {
 				if (!firstTime) {
 					paramStr += ",";
 				}
@@ -2540,9 +2541,9 @@ public class FlowTypeCheck {
 			// Number of parameters matches number of arguments. Now, check that
 			// each argument is a subtype of its corresponding parameter.
 			for (int i = 0; i != parentParams.size(); ++i) {
-				Type parentParam = parentParams.get(i);
-				Type childParam = childParams.get(i);
-				if (!resolver.isRawCoerciveSubtype(parentParam, childParam, lifetimes)) {
+				SemanticType parentParam = toSemanticType(parentParams.get(i));
+				SemanticType childParam = toSemanticType(childParams.get(i));
+				if (!subtypeOperator.isSubtype(parentParam, childParam, lifetimes)) {
 					return false;
 				}
 			}
@@ -2566,6 +2567,11 @@ public class FlowTypeCheck {
 	// ==========================================================================
 	// Helpers
 	// ==========================================================================
+
+	private SemanticType toSemanticType(Type type) {
+		// FIXME: helpful to do more here?
+		return new SemanticType.Leaf(type);
+	}
 
 	private SemanticType[] toSemanticTypes(Tuple<Type> types) {
 		SemanticType[] result = new SemanticType[types.size()];

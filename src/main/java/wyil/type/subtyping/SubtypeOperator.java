@@ -22,7 +22,6 @@ import wybs.lang.NameResolver;
 import wybs.lang.NameResolver.ResolutionError;
 import wyc.lang.WhileyFile.Decl;
 import wyc.lang.WhileyFile.Type;
-import wyil.type.SemanticType;
 import wyil.type.subtyping.EmptinessTest.LifetimeRelation;
 
 /**
