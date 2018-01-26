@@ -1540,7 +1540,7 @@ public class FlowTypeCheck {
 	 */
 	private SemanticType checkVariable(Expr.VariableAccess expr, Type expected, Environment env) {
 		Decl.Variable var = expr.getVariableDeclaration();
-		checkIsSubtype(expected, var.getType(), env, expr); // FIXME: needs refinement
+		checkIsSubtype(toSemanticType(expected), env.getType(var), env, expr); // FIXME: needs refinement
 		return env.getType(var);
 	}
 
@@ -1719,7 +1719,7 @@ public class FlowTypeCheck {
 			Identifier field = fields.get(i);
 			Type expectedFieldType = rec.getField(field);
 			if(expectedFieldType == null) {
-				syntaxError("field not used", expr);
+				syntaxError("field not used", field);
 			}
 			SemanticType fieldType = checkExpression(operands.get(i), expectedFieldType, env);
 			decls[i] = new SemanticType.Field(field, fieldType);
@@ -1961,49 +1961,94 @@ public class FlowTypeCheck {
 
 	private Type.Array extractArrayType(Type type, SyntacticItem element) {
 		try {
-			if(type instanceof Type.Array) {
-				return (Type.Array) type;
-			} else if(type instanceof Type.Nominal) {
-				Type.Nominal t = (Type.Nominal) type;
-				Decl.Type decl = resolver.resolveExactly(t.getName(), Decl.Type.class);
-				return extractArrayType(decl.getType(), element);
-			} else {
+			ArrayList<Type.Array> arrays = new ArrayList<>();
+			extractArrayTypes(type, arrays);
+			if(arrays.size() == 0) {
 				return syntaxError("expected array type", element);
+			} else if(arrays.size() > 1) {
+				return syntaxError("ambiguous array type", element);
+			} else {
+				return arrays.get(0);
 			}
 		} catch(ResolutionError e) {
 			return syntaxError(e.getMessage(), element);
+		}
+	}
+
+	private void extractArrayTypes(Type type, List<Type.Array> types) throws ResolutionError {
+		if(type instanceof Type.Array) {
+			types.add((Type.Array) type);
+		} else if(type instanceof Type.Nominal) {
+			Type.Nominal t = (Type.Nominal) type;
+			Decl.Type decl = resolver.resolveExactly(t.getName(), Decl.Type.class);
+			extractArrayTypes(decl.getType(), types);
+		} else if(type instanceof Type.Union) {
+			Type.Union t = (Type.Union) type;
+			for(int i=0;i!=t.size();++i) {
+				extractArrayTypes(t.get(i), types);
+			}
 		}
 	}
 
 	private Type.Record extractRecordType(Type type, SyntacticItem element) {
 		try {
-			if(type instanceof Type.Record) {
-				return (Type.Record) type;
-			} else if(type instanceof Type.Nominal) {
-				Type.Nominal t = (Type.Nominal) type;
-				Decl.Type decl = resolver.resolveExactly(t.getName(), Decl.Type.class);
-				return extractRecordType(decl.getType(), element);
-			} else {
+			ArrayList<Type.Record> records = new ArrayList<>();
+			extractRecordTypes(type, records);
+			if(records.size() == 0) {
 				return syntaxError("expected record type", element);
+			} else if(records.size() > 1) {
+				return syntaxError("ambiguous record type", element);
+			} else {
+				return records.get(0);
 			}
 		} catch(ResolutionError e) {
 			return syntaxError(e.getMessage(), element);
 		}
 	}
 
+	private void extractRecordTypes(Type type, List<Type.Record> types) throws ResolutionError {
+		if(type instanceof Type.Record) {
+			types.add((Type.Record) type);
+		} else if(type instanceof Type.Nominal) {
+			Type.Nominal t = (Type.Nominal) type;
+			Decl.Type decl = resolver.resolveExactly(t.getName(), Decl.Type.class);
+			extractRecordTypes(decl.getType(), types);
+		} else if(type instanceof Type.Union) {
+			Type.Union t = (Type.Union) type;
+			for(int i=0;i!=t.size();++i) {
+				extractRecordTypes(t.get(i), types);
+			}
+		}
+	}
+
 	private Type.Reference extractReferenceType(Type type, SyntacticItem element) {
 		try {
-			if(type instanceof Type.Record) {
-				return (Type.Reference) type;
-			} else if(type instanceof Type.Nominal) {
-				Type.Nominal t = (Type.Nominal) type;
-				Decl.Type decl = resolver.resolveExactly(t.getName(), Decl.Type.class);
-				return extractReferenceType(decl.getType(), element);
-			} else {
+			ArrayList<Type.Reference> references = new ArrayList<>();
+			extractReferenceTypes(type, references);
+			if(references.size() == 0) {
 				return syntaxError("expected reference type", element);
+			} else if(references.size() > 1) {
+				return syntaxError("ambiguous reference type", element);
+			} else {
+				return references.get(0);
 			}
 		} catch(ResolutionError e) {
 			return syntaxError(e.getMessage(), element);
+		}
+	}
+
+	private void extractReferenceTypes(Type type, List<Type.Reference> types) throws ResolutionError {
+		if(type instanceof Type.Reference) {
+			types.add((Type.Reference) type);
+		} else if(type instanceof Type.Nominal) {
+			Type.Nominal t = (Type.Nominal) type;
+			Decl.Type decl = resolver.resolveExactly(t.getName(), Decl.Type.class);
+			extractReferenceTypes(decl.getType(), types);
+		} else if(type instanceof Type.Union) {
+			Type.Union t = (Type.Union) type;
+			for(int i=0;i!=t.size();++i) {
+				extractReferenceTypes(t.get(i), types);
+			}
 		}
 	}
 

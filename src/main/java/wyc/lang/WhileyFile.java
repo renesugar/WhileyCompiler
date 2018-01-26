@@ -4546,6 +4546,11 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			public SyntacticItem clone(SyntacticItem[] operands) {
 				return new Leaf((Type) operands[0]);
 			}
+
+			@Override
+			public String toString() {
+				return getType().toString();
+			}
 		}
 
 		public static class Reference extends AbstractSemanticType {
@@ -4582,6 +4587,16 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 					return new Reference((SemanticType) operands[0], (Identifier) operands[1]);
 				}
 			}
+
+			@Override
+			public String toString() {
+				if (hasLifetime()) {
+					Identifier lifetime = getLifetime();
+					return "&" + lifetime + ":" + braceAsNecessary(getElement());
+				} else {
+					return "&" + braceAsNecessary(getElement());
+				}
+			}
 		}
 
 		public static class Array extends AbstractSemanticType {
@@ -4602,6 +4617,11 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			@Override
 			public SyntacticItem clone(SyntacticItem[] operands) {
 				return new Array((SemanticType) operands[0]);
+			}
+
+			@Override
+			public String toString() {
+				return braceAsNecessary(getElement()) + "[]";
 			}
 		}
 
@@ -4660,6 +4680,27 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			public SyntacticItem clone(SyntacticItem[] operands) {
 				boolean isOpen = ((Value.Bool)operands[0]).get();
 				return new Record(isOpen,(Tuple<Field>) operands[1]);
+			}
+
+			@Override
+			public String toString() {
+				String r = "{";
+				Tuple<Field> fields = getFields();
+				for (int i = 0; i != fields.size(); ++i) {
+					if (i != 0) {
+						r += ",";
+					}
+					Field field = fields.get(i);
+					r += field.getType() + " " + field.getName();
+				}
+				if (isOpen()) {
+					if (fields.size() > 0) {
+						r += ", ...";
+					} else {
+						r += "...";
+					}
+				}
+				return r + "}";
 			}
 		}
 

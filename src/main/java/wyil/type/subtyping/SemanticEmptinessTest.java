@@ -2,9 +2,7 @@ package wyil.type.subtyping;
 
 import wybs.lang.NameResolver;
 import wybs.lang.NameResolver.ResolutionError;
-import wyc.lang.WhileyFile.Decl;
-import wyc.lang.WhileyFile.Type;
-import wyc.lang.WhileyFile.SemanticType;
+import static wyc.lang.WhileyFile.*;
 
 public class SemanticEmptinessTest implements EmptinessTest<SemanticType> {
 	private final NameResolver resolver;
@@ -18,27 +16,45 @@ public class SemanticEmptinessTest implements EmptinessTest<SemanticType> {
 	@Override
 	public boolean isVoid(SemanticType lhs, State lhsState, SemanticType rhs, State rhsState,
 			LifetimeRelation lifetimes) throws ResolutionError {
-		// TODO: could presumably make this faster with switch statements.
-		if (lhs instanceof SemanticType.Union) {
-			return isVoidUnion((SemanticType.Union) lhs, lhsState, rhs, rhsState, lifetimes);
-		} else if (rhs instanceof SemanticType.Union) {
-			return isVoidUnion((SemanticType.Union) rhs, rhsState, lhs, lhsState, lifetimes);
-		} else if (lhs instanceof SemanticType.Intersection) {
-			return isVoidIntersection((SemanticType.Intersection) lhs, lhsState, rhs, rhsState, lifetimes);
-		} else if (rhs instanceof SemanticType.Intersection) {
-			return isVoidIntersection((SemanticType.Intersection) rhs, rhsState, lhs, lhsState, lifetimes);
-		} else if (lhs instanceof SemanticType.Difference) {
-			return isVoidDifference((SemanticType.Difference) lhs, lhsState, rhs, rhsState, lifetimes);
-		} else if (rhs instanceof SemanticType.Difference) {
-			return isVoidDifference((SemanticType.Difference) rhs, rhsState, lhs, lhsState, lifetimes);
-		} else if (lhs instanceof SemanticType.Array && rhs instanceof SemanticType.Array) {
-			return isVoidArray((SemanticType.Array) lhs, lhsState, (SemanticType.Array) rhs, rhsState, lifetimes);
-		} else if (lhs instanceof SemanticType.Reference && rhs instanceof SemanticType.Reference) {
-			return isVoidReference((SemanticType.Reference) lhs, lhsState, (SemanticType.Reference) rhs, rhsState,
-					lifetimes);
-		} else if (lhs instanceof SemanticType.Record && rhs instanceof SemanticType.Record) {
-			return isVoidRecord((SemanticType.Record) lhs, lhsState, (SemanticType.Record) rhs, rhsState, lifetimes);
-		} else if (lhs instanceof SemanticType.Leaf) {
+		if(lhs.getOpcode() == rhs.getOpcode()) {
+			switch (lhs.getOpcode()) {
+			case SEMTYPE_union:
+				return isVoidUnion((SemanticType.Union) lhs, lhsState, rhs, rhsState, lifetimes);
+			case SEMTYPE_intersection:
+				return isVoidIntersection((SemanticType.Intersection) lhs, lhsState, rhs, rhsState, lifetimes);
+			case SEMTYPE_difference:
+				return isVoidDifference((SemanticType.Difference) lhs, lhsState, rhs, rhsState, lifetimes);
+			case SEMTYPE_array:
+				return isVoidArray((SemanticType.Array) lhs, lhsState, (SemanticType.Array) rhs, rhsState, lifetimes);
+			case SEMTYPE_record:
+				return isVoidRecord((SemanticType.Record) lhs, lhsState, (SemanticType.Record) rhs, rhsState,
+						lifetimes);
+			case SEMTYPE_reference:
+				return isVoidReference((SemanticType.Reference) lhs, lhsState, (SemanticType.Reference) rhs, rhsState,
+						lifetimes);
+			}
+		} else {
+			// First, match left-hand side
+			switch (lhs.getOpcode()) {
+			case SEMTYPE_union:
+				return isVoidUnion((SemanticType.Union) lhs, lhsState, rhs, rhsState, lifetimes);
+			case SEMTYPE_intersection:
+				return isVoidIntersection((SemanticType.Intersection) lhs, lhsState, rhs, rhsState, lifetimes);
+			case SEMTYPE_difference:
+				return isVoidDifference((SemanticType.Difference) lhs, lhsState, rhs, rhsState, lifetimes);
+			}
+			// Second, match right-hand side
+			switch (rhs.getOpcode()) {
+			case SEMTYPE_union:
+				return isVoidUnion((SemanticType.Union) rhs, rhsState, lhs, lhsState, lifetimes);
+			case SEMTYPE_intersection:
+				return isVoidIntersection((SemanticType.Intersection) rhs, rhsState, lhs, lhsState, lifetimes);
+			case SEMTYPE_difference:
+				return isVoidDifference((SemanticType.Difference) rhs, rhsState, lhs, lhsState, lifetimes);
+			}
+		}
+		// Finally, handle leaf cases
+		if (lhs instanceof SemanticType.Leaf) {
 			SemanticType.Leaf leaf = (SemanticType.Leaf) lhs;
 			return isVoidType(leaf.getType(), lhsState, rhs, rhsState, lifetimes);
 		} else {

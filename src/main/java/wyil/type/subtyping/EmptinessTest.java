@@ -55,6 +55,12 @@ public interface EmptinessTest<T> {
 		public State invert() {
 			return toState(!sign,maximise);
 		}
+
+		@Override
+		public String toString() {
+			String r = sign ? "+" : "-";
+			return r + (maximise ? "^" : "_");
+		}
 	}
 
 	public static State toState(boolean sign, boolean maximise) {
