@@ -1917,7 +1917,7 @@ public class FlowTypeCheck {
 	private SemanticType.Array checkIsArrayType(SemanticType type, AccessMode mode, LifetimeRelation lifetimes,
 			SyntacticItem element) {
 		// FIXME: this prohibits effective array types
-		SemanticType.Array t = type.asArray();
+		SemanticType.Array t = type.asArray(resolver);
 		if (t != null) {
 			return t;
 		} else {
@@ -1934,7 +1934,7 @@ public class FlowTypeCheck {
 	private SemanticType.Record checkIsRecordType(SemanticType type, AccessMode mode, LifetimeRelation lifetimes,
 			SyntacticItem element) {
 		// FIXME: this prohibits effective array types
-		SemanticType.Record t = type.asRecord();
+		SemanticType.Record t = type.asRecord(resolver);
 		if (t != null) {
 			return t;
 		} else {
@@ -1951,7 +1951,7 @@ public class FlowTypeCheck {
 	 */
 	private SemanticType.Reference checkIsReferenceType(SemanticType type, AccessMode mode, LifetimeRelation lifetimes,
 			SyntacticItem element) {
-		SemanticType.Reference t = type.asReference();
+		SemanticType.Reference t = type.asReference(resolver);
 		if (t != null) {
 			return t;
 		} else {
@@ -2060,7 +2060,7 @@ public class FlowTypeCheck {
 	 */
 	private Type.Callable checkIsCallableType(SemanticType type, LifetimeRelation lifetimes, SyntacticItem element) {
 		// FIXME: this prohibits effective callable types
-		Type.Callable t = type.asCallable();
+		Type.Callable t = type.asCallable(resolver);
 		if (t != null) {
 			return t;
 		} else {

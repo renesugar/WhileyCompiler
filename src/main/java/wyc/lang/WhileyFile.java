@@ -3952,7 +3952,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Type.Array asArray() {
+			public Type.Array asArray(NameResolver resolver) {
 				return this;
 			}
 
@@ -4640,7 +4640,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 
 			@Override
 			public Reference asReference(NameResolver resolver) {
-				Type.Reference ref = getType().asReference();
+				Type.Reference ref = getType().asReference(resolver);
 				if(ref != null) {
 					return new Reference(new Leaf(ref.getElement()));
 				} else {
@@ -4681,7 +4681,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Reference asReference() {
+			public Reference asReference(NameResolver resolver) {
 				return this;
 			}
 
@@ -4716,7 +4716,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Array asArray() {
+			public Array asArray(NameResolver resolver) {
 				return this;
 			}
 
@@ -4778,7 +4778,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Record asRecord() {
+			public Record asRecord(NameResolver resolver) {
 				return this;
 			}
 
@@ -4826,19 +4826,19 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Array asArray() {
+			public Array asArray(NameResolver resolver) {
 				// TODO Auto-generated method stub
 				return null;
 			}
 
 			@Override
-			public Record asRecord() {
+			public Record asRecord(NameResolver resolver) {
 				// TODO Auto-generated method stub
 				return null;
 			}
 
 			@Override
-			public Reference asReference() {
+			public Reference asReference(NameResolver resolver) {
 				// TODO Auto-generated method stub
 				return null;
 			}
@@ -4878,19 +4878,19 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Array asArray() {
+			public Array asArray(NameResolver resolver) {
 				// TODO Auto-generated method stub
 				return null;
 			}
 
 			@Override
-			public Record asRecord() {
+			public Record asRecord(NameResolver resolver) {
 				// TODO Auto-generated method stub
 				return null;
 			}
 
 			@Override
-			public Reference asReference() {
+			public Reference asReference(NameResolver resolver) {
 				// TODO Auto-generated method stub
 				return null;
 			}
@@ -4929,19 +4929,19 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Array asArray() {
+			public Array asArray(NameResolver resolver) {
 				// TODO Auto-generated method stub
 				return null;
 			}
 
 			@Override
-			public Record asRecord() {
+			public Record asRecord(NameResolver resolver) {
 				// TODO Auto-generated method stub
 				return null;
 			}
 
 			@Override
-			public Reference asReference() {
+			public Reference asReference(NameResolver resolver) {
 				// TODO Auto-generated method stub
 				return null;
 			}
@@ -5253,6 +5253,12 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			@Override
 			public SyntacticItem construct(int opcode, SyntacticItem[] operands, byte[] data) {
 				return new Type.Void();
+			}
+		};
+		schema[TYPE_any] = new Schema(Operands.ZERO, Data.ZERO, "TYPE_any") {
+			@Override
+			public SyntacticItem construct(int opcode, SyntacticItem[] operands, byte[] data) {
+				return new Type.ANy();
 			}
 		};
 		schema[TYPE_null] = new Schema(Operands.ZERO, Data.ZERO, "TYPE_null") {
