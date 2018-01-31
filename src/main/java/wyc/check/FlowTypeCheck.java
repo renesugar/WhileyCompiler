@@ -1628,9 +1628,9 @@ public class FlowTypeCheck {
 	}
 
 	private SemanticType checkIntegerComparator(Expr.BinaryOperator expr, Type expected, Environment environment) {
-		checkIsSubtype(expected,Type.Int,environment,expr);
-		checkExpression(expr.getFirstOperand(), expected, environment);
-		checkExpression(expr.getSecondOperand(), expected, environment);
+		checkIsSubtype(expected,Type.Bool,environment,expr);
+		checkExpression(expr.getFirstOperand(), Type.Int, environment);
+		checkExpression(expr.getSecondOperand(), Type.Int, environment);
 		return SemanticType.Bool;
 	}
 
@@ -1729,7 +1729,7 @@ public class FlowTypeCheck {
 	}
 
 	private SemanticType checkArrayLength(Environment env, Type expected, Expr.ArrayLength expr) {
-		Type.Array arr = new Type.Array(Type.Void);
+		Type.Array arr = new Type.Array(Type.Any);
 		SemanticType src = checkExpression(expr.getOperand(), arr, env);
 		checkIsSubtype(expected, Type.Int, env, expr);
 		checkIsArrayType(src, AccessMode.READING, env, expr.getOperand());

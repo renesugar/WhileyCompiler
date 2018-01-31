@@ -17,6 +17,7 @@ import java.io.*;
 import java.util.*;
 
 import wybs.lang.CompilationUnit;
+import wybs.lang.NameResolver;
 import wybs.lang.SyntacticItem;
 import wybs.lang.SyntacticItem.Data;
 import wybs.lang.SyntacticItem.Operands;
@@ -3657,6 +3658,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 
 	public interface Type extends SyntacticItem {
 
+		public static final Any Any = new Any();
 		public static final Void Void = new Void();
 		public static final Bool Bool = new Bool();
 		public static final Byte Byte = new Byte();
@@ -3671,11 +3673,79 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 */
 		public Type substitute(Map<Identifier,Identifier> binding);
 
+		public Type.Array asArray(NameResolver resolver);
+
+		public Type.Record asRecord(NameResolver resolver);
+
+		public Type.Reference asReference(NameResolver resolver);
+
+		public Type.Callable asCallable(NameResolver resolver);
+
 		public interface Atom extends Type {
 		}
 
 		public interface Primitive extends Atom {
 
+		}
+
+		static abstract class AbstractType extends AbstractSyntacticItem {
+			AbstractType(int opcode) {
+				super(opcode);
+			}
+
+			AbstractType(int opcode, SyntacticItem operand) {
+				super(opcode, operand);
+			}
+
+			AbstractType(int opcode, SyntacticItem... operands) {
+				super(opcode, operands);
+			}
+
+			public Type.Array asArray(NameResolver resolver) {
+				return null;
+			}
+
+			public Type.Record asRecord(NameResolver resolver) {
+				return null;
+			}
+
+			public Type.Reference asReference(NameResolver resolver) {
+				return null;
+			}
+
+			public Type.Callable asCallable(NameResolver resolver) {
+				return null;
+			}
+
+		}
+
+		/**
+		 * An any type represents the type whose variables can hold any possible value.
+		 * Such types cannot currently be expressed at the source level, though remain
+		 * useful for the purposes of type checking.
+		 *
+		 * @author David J. Pearce
+		 *
+		 */
+		public static class Any extends AbstractType implements Primitive {
+			public Any() {
+				super(TYPE_any);
+			}
+
+			@Override
+			public Type substitute(Map<Identifier, Identifier> binding) {
+				return this;
+			}
+
+			@Override
+			public Any clone(SyntacticItem[] operands) {
+				return new Any();
+			}
+
+			@Override
+			public String toString() {
+				return "any";
+			}
 		}
 
 		/**
@@ -3706,7 +3776,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 * @author David J. Pearce
 		 *
 		 */
-		public static class Void extends AbstractSyntacticItem implements Primitive {
+		public static class Void extends AbstractType implements Primitive {
 			public Void() {
 				super(TYPE_void);
 			}
@@ -3740,7 +3810,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 * @author David J. Pearce
 		 *
 		 */
-		public static class Null extends AbstractSyntacticItem implements Primitive {
+		public static class Null extends AbstractType implements Primitive {
 			public Null() {
 				super(TYPE_null);
 			}
@@ -3767,7 +3837,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 * @author David J. Pearce
 		 *
 		 */
-		public static class Bool extends AbstractSyntacticItem implements Primitive {
+		public static class Bool extends AbstractType implements Primitive {
 			public Bool() {
 				super(TYPE_bool);
 			}
@@ -3798,7 +3868,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 * @author David J. Pearce
 		 *
 		 */
-		public static class Byte extends AbstractSyntacticItem implements Primitive {
+		public static class Byte extends AbstractType implements Primitive {
 			public Byte() {
 				super(TYPE_byte);
 			}
@@ -3827,7 +3897,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 * @author David J. Pearce
 		 *
 		 */
-		public static class Int extends AbstractSyntacticItem implements Primitive {
+		public static class Int extends AbstractType implements Primitive {
 			public Int() {
 				super(TYPE_int);
 			}
@@ -3861,7 +3931,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 *
 		 * @return
 		 */
-		public static class Array extends AbstractSyntacticItem implements Atom {
+		public static class Array extends AbstractType implements Atom {
 			public Array(Type element) {
 				super(TYPE_array, element);
 			}
@@ -3879,6 +3949,11 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 				} else {
 					return new Type.Array(after);
 				}
+			}
+
+			@Override
+			public Type.Array asArray() {
+				return this;
 			}
 
 			@Override
@@ -3905,7 +3980,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 *
 		 * @return
 		 */
-		public static class Reference extends AbstractSyntacticItem implements Atom {
+		public static class Reference extends AbstractType implements Atom {
 			public Reference(Type element) {
 				super(TYPE_staticreference, element);
 			}
@@ -3944,6 +4019,11 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
+			public Type.Reference asReference(NameResolver resolver) {
+				return this;
+			}
+
+			@Override
 			public Reference clone(SyntacticItem[] operands) {
 				if (operands.length == 1) {
 					return new Reference((Type) operands[0]);
@@ -3976,7 +4056,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 *
 		 * @return
 		 */
-		public static class Record extends AbstractSyntacticItem implements Atom {
+		public static class Record extends AbstractType implements Atom {
 			public Record(boolean isOpen, Tuple<Decl.Variable> fields) {
 				this(new Value.Bool(isOpen), fields);
 			}
@@ -4021,6 +4101,12 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 					return new Type.Record(isOpen(),after);
 				}
 			}
+
+			@Override
+			public Type.Record asRecord(NameResolver resolver) {
+				return this;
+			}
+
 			@Override
 			public Record clone(SyntacticItem[] operands) {
 				return new Record(operands);
@@ -4093,7 +4179,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 *
 		 * @return
 		 */
-		public static class Nominal extends AbstractSyntacticItem implements Type {
+		public static class Nominal extends AbstractType implements Type {
 
 			public Nominal(Name name) {
 				super(TYPE_nominal, name);
@@ -4110,6 +4196,18 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			@Override
 			public Type.Nominal substitute(Map<Identifier,Identifier> binding) {
 				return this;
+			}
+
+			@Override
+			public Type.Array asArray(NameResolver resolver) {
+				try {
+					Decl.Type decl = resolver.resolveExactly(getName(), Decl.Type.class);
+					return decl.getType().asArray(resolver);
+				} catch (NameResolver.ResolutionError e) {
+					// FIXME: This is obviously not ideal, but it's a temporary fix for now. In the
+					// future, the use of NameResolver will be deprecated.
+					throw new RuntimeException(e);
+				}
 			}
 
 			@Override
@@ -4142,7 +4240,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 *
 		 * @return
 		 */
-		public static class Union extends AbstractSyntacticItem implements Type {
+		public static class Union extends AbstractType implements Type {
 			public Union(Type... types) {
 				super(TYPE_union, types);
 			}
@@ -4195,7 +4293,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 * @author David J. Pearce
 		 *
 		 */
-		public static class Function extends AbstractSyntacticItem implements Type.Callable {
+		public static class Function extends AbstractType implements Type.Callable {
 			public Function(Tuple<Type> parameters, Tuple<Type> returns) {
 				super(TYPE_function, parameters, returns);
 			}
@@ -4247,7 +4345,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 * @author David J. Pearce
 		 *
 		 */
-		public static class Method extends AbstractSyntacticItem implements Type.Callable {
+		public static class Method extends AbstractType implements Type.Callable {
 
 			public Method(Tuple<Type> parameters, Tuple<Type> returns, Tuple<Identifier> captures,
 					Tuple<Identifier> lifetimes) {
@@ -4333,7 +4431,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		 * @author David J. Pearce
 		 *
 		 */
-		public static class Property extends AbstractSyntacticItem implements Type.Callable {
+		public static class Property extends AbstractType implements Type.Callable {
 			public Property(Tuple<Type> parameters) {
 				super(TYPE_property, parameters, new Tuple<>(new Type.Bool()));
 			}
@@ -4380,7 +4478,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 
 		}
 
-		public static class Unresolved extends AbstractSyntacticItem implements Callable {
+		public static class Unresolved extends AbstractType implements Callable {
 			public Unresolved() {
 				super(TYPE_unresolved);
 			}
@@ -4458,13 +4556,13 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		public static final SemanticType Byte = new SemanticType.Leaf(Type.Byte);
 		public static final SemanticType Int = new SemanticType.Leaf(Type.Int);
 
-		public SemanticType.Array asArray();
+		public SemanticType.Array asArray(NameResolver resolver);
 
-		public SemanticType.Record asRecord();
+		public SemanticType.Record asRecord(NameResolver resolver);
 
-		public SemanticType.Reference asReference();
+		public SemanticType.Reference asReference(NameResolver resolver);
 
-		public Type.Callable asCallable();
+		public Type.Callable asCallable(NameResolver resolver);
 
 		public SemanticType union(SemanticType t);
 
@@ -4479,22 +4577,22 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Array asArray() {
+			public Array asArray(NameResolver resolver) {
 				return null;
 			}
 
 			@Override
-			public Record asRecord() {
+			public Record asRecord(NameResolver resolver) {
 				return null;
 			}
 
 			@Override
-			public Reference asReference() {
+			public Reference asReference(NameResolver resolver) {
 				return null;
 			}
 
 			@Override
-			public Type.Callable asCallable() {
+			public Type.Callable asCallable(NameResolver resolver) {
 				return null;
 			}
 
@@ -4525,21 +4623,29 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Array asArray() {
+			public Array asArray(NameResolver resolver) {
+				Type.Array array = getType().asArray(resolver);
+				if(array != null) {
+					return new Array(new Leaf(array.getElement()));
+				} else {
+					return null;
+				}
+			}
+
+			@Override
+			public Record asRecord(NameResolver resolver) {
 				// TODO Auto-generated method stub
 				return null;
 			}
 
 			@Override
-			public Record asRecord() {
-				// TODO Auto-generated method stub
-				return null;
-			}
-
-			@Override
-			public Reference asReference() {
-				// TODO Auto-generated method stub
-				return null;
+			public Reference asReference(NameResolver resolver) {
+				Type.Reference ref = getType().asReference();
+				if(ref != null) {
+					return new Reference(new Leaf(ref.getElement()));
+				} else {
+					return null;
+				}
 			}
 
 			@Override
