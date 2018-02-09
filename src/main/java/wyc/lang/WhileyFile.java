@@ -4634,8 +4634,21 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 
 			@Override
 			public Record asRecord(NameResolver resolver) {
-				// TODO Auto-generated method stub
-				return null;
+				Type.Record record = getType().asRecord(resolver);
+				if(record != null) {
+					// Unfortunately in this case we have to convert all the field types over to
+					// semantic types.
+					Tuple<Decl.Variable> recordFields = record.getFields();
+					Field[] fields = new Field[recordFields.size()];
+					for(int i=0;i!=fields.length;++i) {
+						Decl.Variable recordField = recordFields.get(i);
+						SemanticType fieldType = new SemanticType.Leaf(recordField.getType());
+						fields[i] = new Field(recordField.getName(),fieldType);
+					}
+					return new Record(record.isOpen(),new Tuple<>(fields));
+				} else {
+					return null;
+				}
 			}
 
 			@Override
@@ -5258,7 +5271,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		schema[TYPE_any] = new Schema(Operands.ZERO, Data.ZERO, "TYPE_any") {
 			@Override
 			public SyntacticItem construct(int opcode, SyntacticItem[] operands, byte[] data) {
-				return new Type.ANy();
+				return new Type.Any();
 			}
 		};
 		schema[TYPE_null] = new Schema(Operands.ZERO, Data.ZERO, "TYPE_null") {
