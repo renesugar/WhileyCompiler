@@ -1836,7 +1836,7 @@ public class FlowTypeCheck {
 	}
 
 	private SemanticType checkRecordInitialiser(Expr.RecordInitialiser expr, Environment environment, Type... expected) {
-		Type.Record[] records = extractRecordTypes(expected, expr);
+		Type.Record[] records = extractRecordTypes(expected, expr.getFields(), expr);
 		System.out.println("EXTRACTED: " + Arrays.toString(records));
 		Tuple<Identifier> fields = expr.getFields();
 		Tuple<Expr> operands = expr.getOperands();
@@ -2151,42 +2151,71 @@ public class FlowTypeCheck {
 		return elements;
 	}
 
-	private Type.Record extractRecordType(Type type, SyntacticItem element) {
-		try {
-			// FIXME: can this use Type.asRecord instead?
-			ArrayList<Type.Record> records = new ArrayList<>();
-			extractRecordTypes(type, records);
-			if(records.size() == 0) {
-				return syntaxError("expected record type", element);
-			} else if(records.size() > 1) {
-				return syntaxError("ambiguous record type", element);
-			} else {
-				return records.get(0);
+	private Type.Record extractRecordType(Type type, Tuple<Identifier> fields, SyntacticItem element) {
+		if(type == Type.Any) {
+			Decl.Variable[] variables = new Decl.Variable[fields.size()];
+			for (int i = 0; i != fields.size(); ++i) {
+				variables[i] = new Decl.Variable(new Tuple<>(), fields.get(i), Type.Any);
 			}
-		} catch(ResolutionError e) {
-			return syntaxError(e.getMessage(), element);
+			return new Type.Record(false, new Tuple<>(variables));
+		} else {
+			try {
+				// FIXME: can this use Type.asRecord instead?
+				ArrayList<Type.Record> records = new ArrayList<>();
+				extractRecordTypes(type, fields, records);
+				if(records.size() == 0) {
+					return syntaxError("expected record type", element);
+				} else if(records.size() > 1) {
+					return syntaxError("ambiguous record type", element);
+				} else {
+					return records.get(0);
+				}
+			} catch(ResolutionError e) {
+				return syntaxError(e.getMessage(), element);
+			}
 		}
 	}
 
-	private Type.Record[] extractRecordTypes(Type[] type, SyntacticItem element) {
+	private Type.Record[] extractRecordTypes(Type[] type, Tuple<Identifier> fields, SyntacticItem element) {
 		Type.Record[] types = new Type.Record[type.length];
 		for(int i=0;i!=types.length;++i) {
-			types[i] = extractRecordType(type[i],element);
+			types[i] = extractRecordType(type[i],fields,element);
 		}
 		return ArrayUtils.removeAll(types, null);
 	}
 
-	private void extractRecordTypes(Type type, List<Type.Record> types) throws ResolutionError {
+	private void extractRecordTypes(Type type, Tuple<Identifier> fields, List<Type.Record> types) throws ResolutionError {
 		if(type instanceof Type.Record) {
-			types.add((Type.Record) type);
+			Type.Record t = (Type.Record) type;
+			Tuple<Decl.Variable> t_fields = t.getFields();
+			// Check this record looks like a real candidate.
+			if (t_fields.size() == fields.size() || (t_fields.size() <= fields.size() && t.isOpen())) {
+				int matches = 0;
+				for (int i = 0; i != t_fields.size(); ++i) {
+					Identifier t_field = t_fields.get(i).getName();
+					for(int j=0;j!=fields.size();++j) {
+						if(fields.get(j).equals(t_field)) {
+							matches++;
+						}
+					}
+				}
+				// Finally, check that every t_field was matched. If not, then there is a field
+				// in the expected type which is not present in the actual type and, therefore,
+				// this expected type can be discounted. Observe that we don't need to do any
+				// more checks, since we already know either: matches == fields.size() or
+				// t.isOpen() && matches <= fields.size()
+				if(matches == t_fields.size()) {
+					types.add((Type.Record) type);
+				}
+			}
 		} else if(type instanceof Type.Nominal) {
 			Type.Nominal t = (Type.Nominal) type;
 			Decl.Type decl = resolver.resolveExactly(t.getName(), Decl.Type.class);
-			extractRecordTypes(decl.getType(), types);
+			extractRecordTypes(decl.getType(), fields, types);
 		} else if(type instanceof Type.Union) {
 			Type.Union t = (Type.Union) type;
 			for(int i=0;i!=t.size();++i) {
-				extractRecordTypes(t.get(i), types);
+				extractRecordTypes(t.get(i), fields, types);
 			}
 		}
 	}

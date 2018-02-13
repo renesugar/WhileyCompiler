@@ -22,7 +22,7 @@ import wybs.lang.NameResolver;
 import static wyc.lang.WhileyFile.Type;
 
 import wyc.util.TestUtils;
-import wyil.type.TypeSystem;
+import wyil.type.subtyping.SemanticEmptinessTest;
 import wyil.type.subtyping.SubtypeOperator;
 import wyil.type.subtyping.TypeEmptinessTest;
 
@@ -285,7 +285,9 @@ public class ArraySubtypeTest {
 	@Test public void test_2500() { checkIsSubtype("int[]|int","int[]|int"); }
 
 	private void checkIsSubtype(String from, String to) {
-		TypeEmptinessTest ss = new TypeEmptinessTest(new TypeSystem(null));
+		NameResolver resolver = null;
+		TypeEmptinessTest synet = new TypeEmptinessTest(resolver);
+		SubtypeOperator ss = new SubtypeOperator(resolver,synet);
 		Type ft = TestUtils.fromString(from);
 		Type tt = TestUtils.fromString(to);
 		try {
