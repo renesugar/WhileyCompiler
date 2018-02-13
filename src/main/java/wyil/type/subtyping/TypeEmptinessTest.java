@@ -287,7 +287,7 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 				} else {
 					// Disjunction
 					for (int i = 0; i != operands.length; ++i) {
-						Worklist tmp = (Worklist) worklist.clone();
+						Worklist tmp = worklist.clone();
 						tmp.push(item.sign, operands[i], item.maximise);
 						if (!isVoid((ArrayList<Atom<?>>) truths.clone(), tmp, assumptions, lifetimes)) {
 							// If a single clause of the disjunct is definitely
