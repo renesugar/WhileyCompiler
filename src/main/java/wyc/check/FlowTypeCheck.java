@@ -1307,7 +1307,7 @@ public class FlowTypeCheck {
 
 	public Type checkRecordLVal(Expr.RecordAccess lval, Environment environment) {
 		Type src = checkLVal((LVal) lval.getOperand(), environment);
-		Type.Record recT = extractRecordType(src, lval);
+		Type.Record recT = extractWriteableRecordType(src, lval);
 		Type type = recT.getField(lval.getField());
 		//
 		if (type == null) {
@@ -1785,9 +1785,8 @@ public class FlowTypeCheck {
 
 	private SemanticType checkRecordAccess(Expr.RecordAccess expr, Environment env, Type... expected) {
 		// FIXME: this clearly does not make sense.
-		Tuple<Decl.Variable> fields = new Tuple<>(new Decl.Variable(new Tuple<>(), expr.getField(), expected));
-		Type.Record rec = new Type.Record(true, fields);
-		SemanticType src = checkExpression(expr.getOperand(), env, rec);
+		Type.Record[] expectedRecords = getExpectedRecordTypes(expr.getField(),expected);
+		SemanticType src = checkExpression(expr.getOperand(), env, expectedRecords);
 		SemanticType.Record readableRecordT = checkIsRecordType(src, AccessMode.READING, env, expr.getOperand());
 		//
 		SemanticType type = readableRecordT.getField(expr.getField());
@@ -1796,6 +1795,15 @@ public class FlowTypeCheck {
 		} else {
 			return type;
 		}
+	}
+
+	private Type.Record[] getExpectedRecordTypes(Identifier field, Type... expected) {
+		Type.Record[] result = new Type.Record[expected.length];
+		for(int i=0;i!=expected.length;++i) {
+			Tuple<Decl.Variable> fields = new Tuple<>(new Decl.Variable(new Tuple<>(), field, expected[i]));
+			result[i] = new Type.Record(true, fields);
+		}
+		return result;
 	}
 
 	private SemanticType checkRecordUpdate(Expr.RecordUpdate expr, Environment environment, Type... expected) {
@@ -2151,6 +2159,23 @@ public class FlowTypeCheck {
 		return elements;
 	}
 
+	private Type.Record extractWriteableRecordType(Type type, SyntacticItem element) {
+		try {
+			// FIXME: can this use Type.asRecord instead?
+			ArrayList<Type.Record> records = new ArrayList<>();
+			extractWriteableRecordTypes(type, records);
+			if(records.size() == 0) {
+				return syntaxError("expected record type", element);
+			} else if(records.size() > 1) {
+				return syntaxError("ambiguous record type", element);
+			} else {
+				return records.get(0);
+			}
+		} catch(ResolutionError e) {
+			return syntaxError(e.getMessage(), element);
+		}
+	}
+
 	private Type.Record extractRecordType(Type type, Tuple<Identifier> fields, SyntacticItem element) {
 		if(type == Type.Any) {
 			Decl.Variable[] variables = new Decl.Variable[fields.size()];
@@ -2172,6 +2197,21 @@ public class FlowTypeCheck {
 				}
 			} catch(ResolutionError e) {
 				return syntaxError(e.getMessage(), element);
+			}
+		}
+	}
+
+	private void extractWriteableRecordTypes(Type type, List<Type.Record> types) throws ResolutionError {
+		if(type instanceof Type.Record) {
+			types.add((Type.Record)type);
+		} else if(type instanceof Type.Nominal) {
+			Type.Nominal t = (Type.Nominal) type;
+			Decl.Type decl = resolver.resolveExactly(t.getName(), Decl.Type.class);
+			extractWriteableRecordTypes(decl.getType(), types);
+		} else if(type instanceof Type.Union) {
+			Type.Union t = (Type.Union) type;
+			for(int i=0;i!=t.size();++i) {
+				extractWriteableRecordTypes(t.get(i), types);
 			}
 		}
 	}

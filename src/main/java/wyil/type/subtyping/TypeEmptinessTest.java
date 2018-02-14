@@ -863,7 +863,7 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 		}
 	}
 
-	protected static class Term<T extends Type> {
+	public static class Term<T extends Type> {
 		public final boolean sign;
 		public final T type;
 		public final boolean maximise;
