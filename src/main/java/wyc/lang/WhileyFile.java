@@ -4716,6 +4716,34 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		public static interface Leaf extends SemanticType {
 		}
 
+
+		/**
+		 * A semantic type combinator represents either the intersection or union of
+		 * semantic types. Thus, it is an operator over one or more component types.
+		 *
+		 * @author David J. Pearce
+		 *
+		 */
+		public interface Combinator extends SemanticType {
+			/**
+			 * Get number of component types in this combinator
+			 */
+			@Override
+			public int size();
+
+			/**
+			 * Get the ith component type in this combinator
+			 */
+			@Override
+			public SemanticType get(int i);
+
+			/**
+			 * Get all component types in this combinator
+			 */
+			@Override
+			public SemanticType[] getAll();
+		}
+
 		public static class Reference extends AbstractSemanticType implements SemanticType.Atom {
 			public Reference(SemanticType element) {
 				super(SEMTYPE_staticreference,element);
@@ -4907,7 +4935,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 		}
 
-		public static class Union extends AbstractSemanticType {
+		public static class Union extends AbstractSemanticType implements Combinator {
 			public Union(SemanticType... types) {
 				super(SEMTYPE_union, types);
 			}
@@ -4983,7 +5011,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 		}
 
-		public static class Intersection extends AbstractSemanticType {
+		public static class Intersection extends AbstractSemanticType implements Combinator {
 			public Intersection(SemanticType... types) {
 				super(SEMTYPE_intersection, types);
 			}
@@ -5431,6 +5459,13 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			@Override
 			public SyntacticItem construct(int opcode, SyntacticItem[] operands, byte[] data) {
 				return new Type.Record((Value.Bool) operands[0], (Tuple<Type.Field>) operands[1]);
+			}
+		};
+		schema[TYPE_field] = new Schema(Operands.TWO, Data.ZERO, "TYPE_field") {
+			@SuppressWarnings("unchecked")
+			@Override
+			public SyntacticItem construct(int opcode, SyntacticItem[] operands, byte[] data) {
+				return new Type.Field((Identifier) operands[0], (Type) operands[1]);
 			}
 		};
 		schema[TYPE_function] = new Schema(Operands.TWO, Data.ZERO, "TYPE_function") {

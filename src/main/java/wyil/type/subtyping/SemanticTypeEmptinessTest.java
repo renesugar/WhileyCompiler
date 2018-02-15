@@ -276,34 +276,25 @@ public class SemanticTypeEmptinessTest implements EmptinessTest<SemanticType> {
 			Term<SemanticType> item = worklist.pop();
 			SemanticType t = item.type;
 			//
+			boolean conjunct = item.sign;
 			switch (t.getOpcode()) {
+			case SEMTYPE_union:
+			case TYPE_union:
+				conjunct = !conjunct;
 			case SEMTYPE_intersection: {
-				throw new RuntimeException("implement me!");
+				Type.Combinator ut = (Type.Combinator) t;
+				if (conjunct) {
+					worklist.push(item.sign, ut.getAll(), item.maximise);
+				} else {
+					return isVoidDisjunction(ut, item.sign, item.maximise, truths, worklist, assumptions,
+							lifetimes);
+				}
+				break;
 			}
 			case SEMTYPE_difference: {
-				throw new RuntimeException("implement me!");
-			}
-			case SEMTYPE_union:
-			case TYPE_union: {
-				Type.Union ut = (Type.Union) t;
-				boolean conjunct = !item.sign;
-				Type[] operands = ut.toArray(Type.class);
-				if (conjunct) {
-					// Conjunction
-					worklist.push(item.sign, operands, item.maximise);
-				} else {
-					// Disjunction
-					for (int i = 0; i != operands.length; ++i) {
-						Worklist tmp = worklist.clone();
-						tmp.push(item.sign, operands[i], item.maximise);
-						if (!isVoid((ArrayList<Atom<?>>) truths.clone(), tmp, assumptions, lifetimes)) {
-							// If a single clause of the disjunct is definitely
-							// not void, then the whole thing is not void.
-							return false;
-						}
-					}
-					return true;
-				}
+				SemanticType.Difference nt = (SemanticType.Difference) t;
+				worklist.push(item.sign, nt.getLeftHandSide(), item.maximise);
+				worklist.push(!item.sign, nt.getRightHandSide(), !item.maximise);
 				break;
 			}
 			case TYPE_nominal: {
@@ -322,6 +313,21 @@ public class SemanticTypeEmptinessTest implements EmptinessTest<SemanticType> {
 			}
 			return isVoid(truths, worklist, assumptions, lifetimes);
 		}
+	}
+
+	protected boolean isVoidDisjunction(Type.Combinator combinator, boolean sign, boolean maximise, ArrayList<Atom<?>> truths,
+			Worklist worklist, Assumptions assumptions, LifetimeRelation lifetimes) throws ResolutionError {
+		SemanticType[] operands = combinator.getAll();
+		for (int i = 0; i != operands.length; ++i) {
+			Worklist tmp = worklist.clone();
+			tmp.push(sign, operands[i], maximise);
+			if (!isVoid((ArrayList<Atom<?>>) truths.clone(), tmp, assumptions, lifetimes)) {
+				// If a single clause of the disjunct is definitely
+				// not void, then the whole thing is not void.
+				return false;
+			}
+		}
+		return true;
 	}
 
 	protected Name[] append(Name[] lhs, Name rhs) {
@@ -346,6 +352,7 @@ public class SemanticTypeEmptinessTest implements EmptinessTest<SemanticType> {
 	 * @return
 	 * @throws ResolutionError
 	 */
+	@SuppressWarnings("unchecked")
 	protected boolean isVoidAtom(Atom<?> a, Atom<?> b, Assumptions assumptions, LifetimeRelation lifetimes)
 			throws ResolutionError {
 		// At this point, we have several cases left to consider.
@@ -377,16 +384,16 @@ public class SemanticTypeEmptinessTest implements EmptinessTest<SemanticType> {
 				return (aSign != bSign) ? true : false;
 			case SEMTYPE_array:
 				return isVoidArray((Atom<SemanticType.Array>) a, (Atom<SemanticType.Array>) b, assumptions, lifetimes);
-			case TYPE_record:
-				return isVoidRecord((Atom<Type.Record>) a, (Atom<Type.Record>) b, assumptions, lifetimes);
-			case TYPE_reference:
-				return isVoidReference((Atom<Type.Reference>) a, (Atom<Type.Reference>) b, assumptions, lifetimes);
+			case SEMTYPE_record:
+				return isVoidRecord((Atom<SemanticType.Record>) a, (Atom<SemanticType.Record>) b, assumptions, lifetimes);
+			case SEMTYPE_reference:
+				return isVoidReference((Atom<SemanticType.Reference>) a, (Atom<SemanticType.Reference>) b, assumptions, lifetimes);
 			case TYPE_function:
 			case TYPE_method:
 			case TYPE_property:
 				return isVoidCallable((Atom<Type.Callable>) a, (Atom<Type.Callable>) b, assumptions, lifetimes);
 			default:
-				throw new RuntimeException("invalid type encountered: " + aOpcode);
+				throw new RuntimeException("invalid type encountered: " + a);
 			}
 		} else if (aSign && bSign) {
 			// We have two positive atoms of different kind. For example, int
@@ -512,10 +519,10 @@ public class SemanticTypeEmptinessTest implements EmptinessTest<SemanticType> {
 	 * @return
 	 * @throws ResolutionError
 	 */
-	protected boolean isVoidRecord(Atom<Type.Record> lhs, Atom<Type.Record> rhs, Assumptions assumptions,
+	protected boolean isVoidRecord(Atom<SemanticType.Record> lhs, Atom<SemanticType.Record> rhs, Assumptions assumptions,
 			LifetimeRelation lifetimes) throws ResolutionError {
-		Tuple<Type.Field> lhsFields = lhs.type.getFields();
-		Tuple<Type.Field> rhsFields = rhs.type.getFields();
+		Tuple<? extends SemanticType.Field> lhsFields = lhs.type.getFields();
+		Tuple<? extends SemanticType.Field> rhsFields = rhs.type.getFields();
 		//
 		if (lhs.sign || rhs.sign) {
 			// Attempt to match all fields In the positive-positive case this
@@ -537,19 +544,19 @@ public class SemanticTypeEmptinessTest implements EmptinessTest<SemanticType> {
 		}
 	}
 
-	protected int matchRecordFields(Atom<Type.Record> lhs, Atom<Type.Record> rhs, Assumptions assumptions,
+	protected int matchRecordFields(Atom<SemanticType.Record> lhs, Atom<SemanticType.Record> rhs, Assumptions assumptions,
 			LifetimeRelation lifetimes) throws ResolutionError {
-		Tuple<Type.Field> lhsFields = lhs.type.getFields();
-		Tuple<Type.Field> rhsFields = rhs.type.getFields();
+		Tuple<? extends SemanticType.Field> lhsFields = lhs.type.getFields();
+		Tuple<? extends SemanticType.Field> rhsFields = rhs.type.getFields();
 		//
 		boolean sign = (lhs.sign == rhs.sign);
 		int matches = 0;
 		//
 		for (int i = 0; i != lhsFields.size(); ++i) {
-			Type.Field lhsField = lhsFields.get(i);
+			SemanticType.Field lhsField = lhsFields.get(i);
 			Term<?> lhsTerm = new Term<>(lhs.sign, lhsField.getType(), lhs.maximise);
 			for (int j = 0; j != rhsFields.size(); ++j) {
-				Type.Field rhsField = rhsFields.get(j);
+				SemanticType.Field rhsField = rhsFields.get(j);
 				if (!lhsField.getName().equals(rhsField.getName())) {
 					continue;
 				} else {
@@ -578,7 +585,8 @@ public class SemanticTypeEmptinessTest implements EmptinessTest<SemanticType> {
 	}
 
 	protected boolean analyseRecordMatches(int matches, boolean lhsSign, boolean lhsOpen,
-			Tuple<Type.Field> lhsFields, boolean rhsSign, boolean rhsOpen, Tuple<Type.Field> rhsFields) {
+			Tuple<? extends SemanticType.Field> lhsFields, boolean rhsSign, boolean rhsOpen,
+			Tuple<? extends SemanticType.Field> rhsFields) {
 		// NOTE: Don't touch this method unless you know what you are doing. And, trust
 		// me, you don't know what you are doing.
 		//
@@ -620,8 +628,8 @@ public class SemanticTypeEmptinessTest implements EmptinessTest<SemanticType> {
 		EQUAL, UNCOMPARABLE, SMALLER, GREATER
 	}
 
-	protected State compare(int matches, boolean lhsOpen, Tuple<Type.Field> lhsFields, boolean rhsOpen,
-			Tuple<Type.Field> rhsFields) {
+	protected State compare(int matches, boolean lhsOpen, Tuple<? extends SemanticType.Field> lhsFields,
+			boolean rhsOpen, Tuple<? extends SemanticType.Field> rhsFields) {
 		int lhsSize = lhsFields.size();
 		int rhsSize = rhsFields.size();
 		//
@@ -673,7 +681,7 @@ public class SemanticTypeEmptinessTest implements EmptinessTest<SemanticType> {
 	 * @return
 	 * @throws ResolutionError
 	 */
-	protected boolean isVoidReference(Atom<Type.Reference> lhs, Atom<Type.Reference> rhs, Assumptions assumptions,
+	protected boolean isVoidReference(Atom<SemanticType.Reference> lhs, Atom<SemanticType.Reference> rhs, Assumptions assumptions,
 			LifetimeRelation lifetimes) throws ResolutionError {
 		String lhsLifetime = extractLifetime(lhs.type);
 		String rhsLifetime = extractLifetime(rhs.type);
@@ -708,7 +716,7 @@ public class SemanticTypeEmptinessTest implements EmptinessTest<SemanticType> {
 		}
 	}
 
-	private String extractLifetime(Type.Reference ref) {
+	private String extractLifetime(SemanticType.Reference ref) {
 		if (ref.hasLifetime()) {
 			return ref.getLifetime().get();
 		} else {

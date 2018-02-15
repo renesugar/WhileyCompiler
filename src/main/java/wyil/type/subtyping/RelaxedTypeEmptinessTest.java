@@ -17,8 +17,7 @@ package wyil.type.subtyping;
 import wybs.lang.NameResolver;
 import wybs.lang.NameResolver.ResolutionError;
 import wybs.util.AbstractCompilationUnit.Tuple;
-import wyc.lang.WhileyFile.Decl;
-import wyc.lang.WhileyFile.Type;
+import wyc.lang.WhileyFile.SemanticType;
 
 /**
  * <p>
@@ -54,19 +53,19 @@ public class RelaxedTypeEmptinessTest extends SemanticTypeEmptinessTest {
 	}
 
 	@Override
-	protected int matchRecordFields(Atom<Type.Record> lhs, Atom<Type.Record> rhs, Assumptions assumptions,
+	protected int matchRecordFields(Atom<SemanticType.Record> lhs, Atom<SemanticType.Record> rhs, Assumptions assumptions,
 			LifetimeRelation lifetimes) throws ResolutionError {
-		Tuple<Type.Field> lhsFields = lhs.type.getFields();
-		Tuple<Type.Field> rhsFields = rhs.type.getFields();
+		Tuple<? extends SemanticType.Field> lhsFields = lhs.type.getFields();
+		Tuple<? extends SemanticType.Field> rhsFields = rhs.type.getFields();
 		//
 		boolean sign = (lhs.sign == rhs.sign);
 		int matches = 0;
 		//
 		for (int i = 0; i != lhsFields.size(); ++i) {
-			Type.Field lhsField = lhsFields.get(i);
+			SemanticType.Field lhsField = lhsFields.get(i);
 			Term<?> lhsTerm = new Term<>(lhs.sign, lhsField.getType(), lhs.maximise);
 			for (int j = 0; j != rhsFields.size(); ++j) {
-				Type.Field rhsField = rhsFields.get(j);
+				SemanticType.Field rhsField = rhsFields.get(j);
 				if (!lhsField.getName().equals(rhsField.getName())) {
 					continue;
 				} else {
@@ -97,7 +96,8 @@ public class RelaxedTypeEmptinessTest extends SemanticTypeEmptinessTest {
 
 	@Override
 	protected boolean analyseRecordMatches(int matches, boolean lhsSign, boolean lhsOpen,
-			Tuple<Type.Field> lhsFields, boolean rhsSign, boolean rhsOpen, Tuple<Type.Field> rhsFields) {
+			Tuple<? extends SemanticType.Field> lhsFields, boolean rhsSign, boolean rhsOpen,
+			Tuple<? extends SemanticType.Field> rhsFields) {
 		return super.analyseRecordMatches(matches, lhsSign, true, lhsFields, rhsSign, true, rhsFields);
 	}
 }

@@ -1842,7 +1842,6 @@ public class FlowTypeCheck {
 
 	private SemanticType checkRecordInitialiser(Expr.RecordInitialiser expr, Environment environment, Type... expected) {
 		Type.Record[] records = extractRecordTypes(expected, expr.getFields(), expr);
-		System.out.println("EXTRACTED: " + Arrays.toString(records));
 		Tuple<Identifier> fields = expr.getFields();
 		Tuple<Expr> operands = expr.getOperands();
 		SemanticType.Field[] decls = new SemanticType.Field[operands.size()];
