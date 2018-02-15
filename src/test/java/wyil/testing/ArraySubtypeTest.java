@@ -22,7 +22,7 @@ import wybs.lang.NameResolver;
 import static wyc.lang.WhileyFile.Type;
 
 import wyc.util.TestUtils;
-import wyil.type.subtyping.SemanticEmptinessTest;
+import wyil.type.subtyping.RelaxedTypeEmptinessTest;
 import wyil.type.subtyping.SubtypeOperator;
 import wyil.type.subtyping.SemanticTypeEmptinessTest;
 
@@ -286,23 +286,25 @@ public class ArraySubtypeTest {
 
 	private void checkIsSubtype(String from, String to) {
 		NameResolver resolver = null;
-		SemanticTypeEmptinessTest synet = new SemanticTypeEmptinessTest(resolver);
-		SubtypeOperator ss = new SubtypeOperator(resolver,synet);
+		SubtypeOperator subtypeOperator = new SubtypeOperator(resolver,
+				new RelaxedTypeEmptinessTest(resolver));
 		Type ft = TestUtils.fromString(from);
 		Type tt = TestUtils.fromString(to);
 		try {
-			assertTrue(ss.isSubtype(ft,tt,null) != SubtypeOperator.Result.False);
+			assertTrue(subtypeOperator.isSubtype(ft,tt,null));
 		} catch(NameResolver.ResolutionError e) {
 			throw new RuntimeException(e);
 		}
 	}
 
 	private void checkNotSubtype(String from, String to) {
-		SemanticTypeEmptinessTest ss = new SemanticTypeEmptinessTest(new TypeSystem(null));
+		NameResolver resolver = null;
+		SubtypeOperator subtypeOperator = new SubtypeOperator(resolver,
+				new RelaxedTypeEmptinessTest(resolver));
 		Type ft = TestUtils.fromString(from);
 		Type tt = TestUtils.fromString(to);
 		try {
-			assertFalse(ss.isSubtype(ft,tt,null) != SubtypeOperator.Result.False);
+			assertFalse(subtypeOperator.isSubtype(ft,tt,null));
 		} catch(NameResolver.ResolutionError e) {
 			throw new RuntimeException(e);
 		}
