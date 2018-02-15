@@ -840,7 +840,17 @@ public abstract class AbstractConsumer<T> {
 	}
 
 	public void visitTypeRecord(Type.Record type, T data) {
-		visitVariables(type.getFields(), data);
+		visitFields(type.getFields(), data);
+	}
+
+	public void visitFields(Tuple<Type.Field> fields, T data) {
+		for(int i=0;i!=fields.size();++i) {
+			visitField(fields.get(i), data);
+		}
+	}
+
+	public void visitField(Type.Field field, T data) {
+		visitType(field.getType(), data);
 	}
 
 	public void visitTypeReference(Type.Reference type, T data) {
@@ -866,9 +876,6 @@ public abstract class AbstractConsumer<T> {
 		case SEMTYPE_array:
 			visitSemanticTypeArray((SemanticType.Array) type, data);
 			break;
-		case SEMTYPE_leaf:
-			visitSemanticTypeLeaf((SemanticType.Leaf) type, data);
-			break;
 		case SEMTYPE_record:
 			visitSemanticTypeRecord((SemanticType.Record) type, data);
 			break;
@@ -886,16 +893,14 @@ public abstract class AbstractConsumer<T> {
 			visitSemanticTypeDifference((SemanticType.Difference) type, data);
 			break;
 		default:
-			throw new IllegalArgumentException("unknown semantic type encountered (" + type.getClass().getName() + ")");
+			// Handle leaf cases
+			visitType((Type) type, data);
+			break;
 		}
 	}
 
 	public void visitSemanticTypeArray(SemanticType.Array type, T data) {
 		visitSemanticType(type.getElement(), data);
-	}
-
-	public void visitSemanticTypeLeaf(SemanticType.Leaf type, T data) {
-		visitType(type.getType(), data);
 	}
 
 	public void visitSemanticTypeRecord(SemanticType.Record type, T data) {

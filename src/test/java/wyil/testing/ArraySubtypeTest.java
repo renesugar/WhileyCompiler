@@ -24,7 +24,7 @@ import static wyc.lang.WhileyFile.Type;
 import wyc.util.TestUtils;
 import wyil.type.subtyping.SemanticEmptinessTest;
 import wyil.type.subtyping.SubtypeOperator;
-import wyil.type.subtyping.TypeEmptinessTest;
+import wyil.type.subtyping.SemanticTypeEmptinessTest;
 
 public class ArraySubtypeTest {
 	@Test public void test_52() { checkIsSubtype("null","null"); }
@@ -286,7 +286,7 @@ public class ArraySubtypeTest {
 
 	private void checkIsSubtype(String from, String to) {
 		NameResolver resolver = null;
-		TypeEmptinessTest synet = new TypeEmptinessTest(resolver);
+		SemanticTypeEmptinessTest synet = new SemanticTypeEmptinessTest(resolver);
 		SubtypeOperator ss = new SubtypeOperator(resolver,synet);
 		Type ft = TestUtils.fromString(from);
 		Type tt = TestUtils.fromString(to);
@@ -298,7 +298,7 @@ public class ArraySubtypeTest {
 	}
 
 	private void checkNotSubtype(String from, String to) {
-		TypeEmptinessTest ss = new TypeEmptinessTest(new TypeSystem(null));
+		SemanticTypeEmptinessTest ss = new SemanticTypeEmptinessTest(new TypeSystem(null));
 		Type ft = TestUtils.fromString(from);
 		Type tt = TestUtils.fromString(to);
 		try {

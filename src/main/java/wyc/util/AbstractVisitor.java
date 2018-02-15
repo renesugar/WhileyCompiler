@@ -16,8 +16,11 @@ package wyc.util;
 import wyc.lang.WhileyFile;
 import wyc.lang.WhileyFile.Decl;
 import wyc.lang.WhileyFile.Expr;
+import wyc.lang.WhileyFile.Type;
 
 import static wyc.lang.WhileyFile.*;
+
+import wybs.util.AbstractCompilationUnit.Tuple;
 
 /**
  * A simple visitor over all declarations, statements, expressions and types in
@@ -838,8 +841,19 @@ public abstract class AbstractVisitor {
 	}
 
 	public void visitTypeRecord(Type.Record type) {
-		visitVariables(type.getFields());
+		visitFields(type.getFields());
 	}
+
+	public void visitFields(Tuple<Type.Field> fields) {
+		for(int i=0;i!=fields.size();++i) {
+			visitField(fields.get(i));
+		}
+	}
+
+	public void visitField(Type.Field field) {
+		visitType(field.getType());
+	}
+
 
 	public void visitTypeReference(Type.Reference type) {
 		visitType(type.getElement());
@@ -864,9 +878,6 @@ public abstract class AbstractVisitor {
 		case SEMTYPE_array:
 			visitSemanticTypeArray((SemanticType.Array) type);
 			break;
-		case SEMTYPE_leaf:
-			visitSemanticTypeLeaf((SemanticType.Leaf) type);
-			break;
 		case SEMTYPE_record:
 			visitSemanticTypeRecord((SemanticType.Record) type);
 			break;
@@ -884,16 +895,13 @@ public abstract class AbstractVisitor {
 			visitSemanticTypeDifference((SemanticType.Difference) type);
 			break;
 		default:
-			throw new IllegalArgumentException("unknown semantic type encountered (" + type.getClass().getName() + ")");
+			// Handle leaf cases
+			visitType((Type) type);
 		}
 	}
 
 	public void visitSemanticTypeArray(SemanticType.Array type) {
 		visitSemanticType(type.getElement());
-	}
-
-	public void visitSemanticTypeLeaf(SemanticType.Leaf type) {
-		visitType(type.getType());
 	}
 
 	public void visitSemanticTypeRecord(SemanticType.Record type) {

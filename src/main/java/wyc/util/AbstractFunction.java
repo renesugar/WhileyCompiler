@@ -16,8 +16,11 @@ package wyc.util;
 import wyc.lang.WhileyFile;
 import wyc.lang.WhileyFile.Decl;
 import wyc.lang.WhileyFile.SemanticType;
+import wyc.lang.WhileyFile.Type;
 
 import static wyc.lang.WhileyFile.*;
+
+import wybs.util.AbstractCompilationUnit.Tuple;
 
 /**
  * A simple visitor over all declarations, statements, expressions and types in
@@ -823,7 +826,19 @@ public abstract class AbstractFunction<P,R> {
 	}
 
 	public R visitTypeRecord(Type.Record type, P data) {
-		visitVariables(type.getFields(), data);
+		visitFields(type.getFields(), data);
+		return null;
+	}
+
+	public R visitFields(Tuple<Type.Field> fields, P data) {
+		for(int i=0;i!=fields.size();++i) {
+			visitField(fields.get(i), data);
+		}
+		return null;
+	}
+
+	public R visitField(Type.Field field, P data) {
+		visitType(field.getType(), data);
 		return null;
 	}
 
@@ -852,8 +867,6 @@ public abstract class AbstractFunction<P,R> {
 		switch (type.getOpcode()) {
 		case SEMTYPE_array:
 			return visitSemanticTypeArray((SemanticType.Array) type, data);
-		case SEMTYPE_leaf:
-			return visitSemanticTypeLeaf((SemanticType.Leaf) type, data);
 		case SEMTYPE_record:
 			return visitSemanticTypeRecord((SemanticType.Record) type, data);
 		case SEMTYPE_staticreference:
@@ -866,17 +879,13 @@ public abstract class AbstractFunction<P,R> {
 		case SEMTYPE_difference:
 			return visitSemanticTypeDifference((SemanticType.Difference) type, data);
 		default:
-			throw new IllegalArgumentException("unknown semantic type encountered (" + type.getClass().getName() + ")");
+			// Handle leaf cases
+			return visitType((Type) type, data);
 		}
 	}
 
 	public R visitSemanticTypeArray(SemanticType.Array type, P data) {
 		visitSemanticType(type.getElement(), data);
-		return null;
-	}
-
-	public R visitSemanticTypeLeaf(SemanticType.Leaf type, P data) {
-		visitType(type.getType(), data);
 		return null;
 	}
 

@@ -37,7 +37,7 @@ import wyfs.lang.Path;
 import wyfs.util.Trie;
 import wyil.type.subtyping.EmptinessTest.LifetimeRelation;
 import wyil.type.subtyping.RelaxedTypeEmptinessTest;
-import wyil.type.subtyping.SemanticEmptinessTest;
+import wyil.type.subtyping.SemanticTypeEmptinessTest;
 import wyil.type.subtyping.SubtypeOperator;
 import wyc.lang.WhileyFile;
 import wyc.lang.WhileyFile.Decl;
@@ -111,7 +111,7 @@ public class FlowTypeCheck {
 		this.builder = builder;
 		this.resolver = builder.getNameResolver();
 		this.subtypeOperator = new SubtypeOperator(resolver,
-				new SemanticEmptinessTest(resolver, new RelaxedTypeEmptinessTest(resolver)));
+				new RelaxedTypeEmptinessTest(resolver));
 	}
 
 	// =========================================================================
@@ -178,7 +178,7 @@ public class FlowTypeCheck {
 		Environment environment = new Environment();
 		if (decl.hasInitialiser()) {
 			SemanticType type = checkExpression(decl.getInitialiser(), environment, decl.getType());
-			checkIsSubtype(toSemanticType(decl.getType()), type, environment, decl.getInitialiser());
+			checkIsSubtype(decl.getType(), type, environment, decl.getInitialiser());
 		}
 	}
 
@@ -1134,9 +1134,9 @@ public class FlowTypeCheck {
 		try {
 			Expr lhs = expr.getOperand();
 			SemanticType lhsT = checkExpression(expr.getOperand(), environment, Type.Any);
-			SemanticType rhsT = toSemanticType(expr.getTestType());
+			SemanticType rhsT = expr.getTestType();
 			// Sanity check operands for this type test
-			SemanticType trueBranchRefinementT = new SemanticType.Intersection(lhsT, rhsT);
+			SemanticType trueBranchRefinementT = new Type.Intersection(lhsT, rhsT);
 			SemanticType falseBranchRefinementT = new SemanticType.Difference(lhsT, rhsT);
 			//
 			if (subtypeOperator.isVoid(trueBranchRefinementT, environment)) {
@@ -1151,9 +1151,9 @@ public class FlowTypeCheck {
 			if (extraction != null) {
 				Decl.Variable var = extraction.getFirst();
 				SemanticType varT = environment.getType(var);
-				SemanticType refinementT = toSemanticType(extraction.getSecond());
+				SemanticType refinementT = extraction.getSecond();
 				if (sign) {
-					refinementT = new SemanticType.Intersection(varT, refinementT);
+					refinementT = new Type.Intersection(varT, refinementT);
 				} else {
 					refinementT = new SemanticType.Difference(varT, refinementT);
 				}
@@ -1194,7 +1194,7 @@ public class FlowTypeCheck {
 			return new Pair<>(var.getVariableDeclaration(), type);
 		} else if (expr instanceof Expr.RecordAccess) {
 			Expr.RecordAccess ra = (Expr.RecordAccess) expr;
-			Decl.Variable field = new Decl.Variable(new Tuple<>(), ((Expr.RecordAccess) expr).getField(), type);
+			Type.Field field = new Type.Field(((Expr.RecordAccess) expr).getField(), type);
 			Type.Record recT = new Type.Record(true, new Tuple<>(field));
 			return extractTypeTest(ra.getOperand(), recT);
 		} else {
@@ -1343,21 +1343,21 @@ public class FlowTypeCheck {
 			Expr expression = expressions.get(i);
 			switch (expression.getOpcode()) {
 			case EXPR_invoke: {
-				SemanticType[] results = checkInvoke((Expr.Invoke) expression, environment);
+				Tuple<Type> results = checkInvoke((Expr.Invoke) expression, environment);
 				// FIXME: THIS LOOP IS UGLY
-				for(int k=0;k!=results.length;++k) {
-					checkIsSubtype(new Type[] {expected.get(j+k)},results[k],environment,expression);
+				for(int k=0;k!=results.size();++k) {
+					checkIsSubtype(new Type[] {expected.get(j+k)},results.get(k),environment,expression);
 				}
-				j = j + results.length;
+				j = j + results.size();
 				break;
 			}
 			case EXPR_indirectinvoke: {
-				SemanticType[] results = checkIndirectInvoke((Expr.IndirectInvoke) expression, environment);
+				Tuple<Type> results = checkIndirectInvoke((Expr.IndirectInvoke) expression, environment);
 				// FIXME: THIS LOOP IS UGLY
-				for(int k=0;k!=results.length;++k) {
-					checkIsSubtype(new Type[] {expected.get(j+k)},results[k],environment,expression);
+				for(int k=0;k!=results.size();++k) {
+					checkIsSubtype(new Type[] {expected.get(j+k)},results.get(k),environment,expression);
 				}
-				j = j + results.length;
+				j = j + results.size();
 				break;
 			}
 			default:
@@ -1410,9 +1410,9 @@ public class FlowTypeCheck {
 			type = checkCast((Expr.Cast) expression, environment, expected);
 			break;
 		case EXPR_invoke: {
-			SemanticType[] types = checkInvoke((Expr.Invoke) expression, environment);
+			Tuple<Type> types = checkInvoke((Expr.Invoke) expression, environment);
 			// Sanity check
-			switch(types.length) {
+			switch(types.size()) {
 			case 0:
 				syntaxError("too many return values", expression);
 			case 1:
@@ -1420,12 +1420,12 @@ public class FlowTypeCheck {
 			default:
 				syntaxError("too few return values", expression);
 			}
-			return types[0];
+			return types.get(0);
 		}
 		case EXPR_indirectinvoke: {
-			SemanticType[] types = checkIndirectInvoke((Expr.IndirectInvoke) expression, environment);
+			Tuple<Type> types = checkIndirectInvoke((Expr.IndirectInvoke) expression, environment);
 			// Sanity check
-			switch(types.length) {
+			switch(types.size()) {
 			case 0:
 				syntaxError("too many return values", expression);
 			case 1:
@@ -1433,7 +1433,7 @@ public class FlowTypeCheck {
 			default:
 				syntaxError("too few return values", expression);
 			}
-			return types[0];
+			return types.get(0);
 		}
 		// Conditions
 		case EXPR_logicalnot:
@@ -1445,7 +1445,7 @@ public class FlowTypeCheck {
 		case EXPR_logicaluniversal:
 		case EXPR_logicalexistential:
 			checkCondition(expression, true, environment);
-			return SemanticType.Bool;
+			return Type.Bool;
 		// Comparators
 		case EXPR_equal:
 		case EXPR_notequal:
@@ -1539,15 +1539,12 @@ public class FlowTypeCheck {
 			SyntacticItem element) {
 		try {
 			Type least = null;
-			SemanticType semLeast = null;
 			for (int i = 0; i != expected.length; ++i) {
-				Type ith = expected[i];
-				SemanticType candidate = toSemanticType(ith);
+				Type candidate = expected[i];
 				if (subtypeOperator.isSubtype(candidate, actual, environment)) {
-					if (least == null || subtypeOperator.isSubtype(semLeast, candidate, environment)) {
-						least = ith;
-						semLeast = candidate;
-					} else if (subtypeOperator.isSubtype(candidate, semLeast, environment)) {
+					if (least == null || subtypeOperator.isSubtype(least, candidate, environment)) {
+						least = candidate;
+					} else if (subtypeOperator.isSubtype(candidate, least, environment)) {
 						// ignore,
 					} else {
 						// Ambiguous coercion
@@ -1576,18 +1573,18 @@ public class FlowTypeCheck {
 		Value item = expr.getValue();
 		switch (item.getOpcode()) {
 		case ITEM_null:
-			return SemanticType.Null;
+			return Type.Null;
 		case ITEM_bool:
-			return SemanticType.Bool;
+			return Type.Bool;
 		case ITEM_int:
-			return SemanticType.Int;
+			return Type.Int;
 		case ITEM_byte:
-			return SemanticType.Byte;
+			return Type.Byte;
 		case ITEM_utf8:
 			// FIXME: this is not an optimal solution. The reason being that we
 			// have lost nominal information regarding whether it is an instance
 			// of std::ascii or std::utf8, for example.
-			return new SemanticType.Array(SemanticType.Int);
+			return new SemanticType.Array(Type.Int);
 		default:
 			return internalFailure("unknown constant encountered: " + expr, expr);
 		}
@@ -1613,7 +1610,7 @@ public class FlowTypeCheck {
 			Decl.StaticVariable decl = resolver.resolveExactly(expr.getName(), Decl.StaticVariable.class);
 			checkIsSubtype(expected, decl.getType(), env, expr);
 			//
-			return toSemanticType(decl.getType());
+			return decl.getType();
 		} catch (ResolutionError e) {
 			return syntaxError(errorMessage(RESOLUTION_ERROR, expr.getName().toString()), expr, e);
 		}
@@ -1622,10 +1619,10 @@ public class FlowTypeCheck {
 	private SemanticType checkCast(Expr.Cast expr, Environment env, Type... expected) {
 		checkIsSubtype(expected, expr.getType(), env, expr);
 		SemanticType rhsT = checkExpression(expr.getOperand(), env, expr.getType());
-		return toSemanticType(expr.getType());
+		return expr.getType();
 	}
 
-	private SemanticType[] checkInvoke(Expr.Invoke expr, Environment environment) {
+	private Tuple<Type> checkInvoke(Expr.Invoke expr, Environment environment) {
 		try {
 			// Determine the argument types
 			Tuple<Expr> arguments = expr.getOperands();
@@ -1647,7 +1644,7 @@ public class FlowTypeCheck {
 			// Assign descriptor to this expression
 			expr.setSignature(expr.getHeap().allocate(selected));
 			// Finally, return the declared returns/
-			return toSemanticTypes(selected.getReturns());
+			return selected.getReturns();
 		} catch (ResolutionError e) {
 			return syntaxError(errorMessage(RESOLUTION_ERROR, expr.getName().toString()), expr, e);
 		}
@@ -1678,7 +1675,7 @@ public class FlowTypeCheck {
 		for (int i = 0; i != candidates.size(); ++i) {
 			Type.Callable candidate = candidates.get(i).getType();
 			Type parameter = candidate.getParameters().get(argument);
-			if (!subtypeOperator.isSubtype(toSemanticType(parameter), actual, environment)) {
+			if (!subtypeOperator.isSubtype(parameter, actual, environment)) {
 				// This candidate is no longer applicable for whatever reason, therefore remove
 				// it from the list being considered.
 				candidates.remove(i);
@@ -1687,7 +1684,7 @@ public class FlowTypeCheck {
 		}
 	}
 
-	private SemanticType[] checkIndirectInvoke(Expr.IndirectInvoke expr, Environment environment) {
+	private Tuple<Type> checkIndirectInvoke(Expr.IndirectInvoke expr, Environment environment) {
 		// Determine signature type from source
 		SemanticType type = checkExpression(expr.getSource(), environment, Type.Any);
 		Type.Callable sig = checkIsCallableType(type, environment, expr.getSource());
@@ -1703,10 +1700,10 @@ public class FlowTypeCheck {
 			// Determine argument type
 			SemanticType arg = checkExpression(arguments.get(i), environment, parameters.get(i));
 			// Check argument is subtype of parameter
-			checkIsSubtype(toSemanticType(parameters.get(i)), arg, environment, arguments.get(i));
+			checkIsSubtype(parameters.get(i), arg, environment, arguments.get(i));
 		}
 		//
-		return toSemanticTypes(sig.getReturns());
+		return sig.getReturns();
 	}
 
 	private SemanticType checkComparisonOperator(Expr.BinaryOperator expr, Environment environment, Type... expected) {
@@ -1731,7 +1728,7 @@ public class FlowTypeCheck {
 //				syntaxError(errorMessage(INCOMPARABLE_OPERANDS, lhs, rhs), expr);
 //				return null;
 //			}
-			return SemanticType.Bool;
+			return Type.Bool;
 //		} catch (ResolutionError e) {
 //			return syntaxError(e.getMessage(), expr);
 //		}
@@ -1741,13 +1738,13 @@ public class FlowTypeCheck {
 		checkIsSubtype(expected,Type.Bool,environment,expr);
 		checkExpression(expr.getFirstOperand(), environment, Type.Int);
 		checkExpression(expr.getSecondOperand(), environment, Type.Int);
-		return SemanticType.Bool;
+		return Type.Bool;
 	}
 
 	private SemanticType checkIntegerOperator(Expr.UnaryOperator expr, Environment environment, Type... expected) {
 		checkIsSubtype(expected,Type.Int,environment,expr);
 		checkExpression(expr.getOperand(), environment, expected);
-		return SemanticType.Int;
+		return Type.Int;
 	}
 
 	/**
@@ -1761,26 +1758,26 @@ public class FlowTypeCheck {
 		checkIsSubtype(expected,Type.Int,environment,expr);
 		checkExpression(expr.getFirstOperand(), environment, expected);
 		checkExpression(expr.getSecondOperand(), environment, expected);
-		return SemanticType.Int;
+		return Type.Int;
 	}
 
 	private SemanticType checkBitwiseOperator(Expr.UnaryOperator expr, Environment environment, Type... expected) {
 		checkIsSubtype(expected,Type.Byte,environment,expr);
 		checkExpression(expr.getOperand(), environment, expected);
-		return SemanticType.Byte;
+		return Type.Byte;
 	}
 
 	private SemanticType checkBitwiseOperator(Expr.NaryOperator expr, Environment environment, Type... expected) {
 		checkIsSubtype(expected,Type.Byte,environment,expr);
 		checkExpressions(expr.getOperands(), environment, expected);
-		return SemanticType.Byte;
+		return Type.Byte;
 	}
 
 	private SemanticType checkBitwiseShift(Expr.BinaryOperator expr, Environment environment, Type... expected) {
 		checkIsSubtype(expected,Type.Byte,environment,expr);
 		checkExpression(expr.getFirstOperand(), environment, expected);
 		checkExpression(expr.getSecondOperand(), environment, Type.Int);
-		return SemanticType.Byte;
+		return Type.Byte;
 	}
 
 	private SemanticType checkRecordAccess(Expr.RecordAccess expr, Environment env, Type... expected) {
@@ -1800,7 +1797,7 @@ public class FlowTypeCheck {
 	private Type.Record[] getExpectedRecordTypes(Identifier field, Type... expected) {
 		Type.Record[] result = new Type.Record[expected.length];
 		for(int i=0;i!=expected.length;++i) {
-			Tuple<Decl.Variable> fields = new Tuple<>(new Decl.Variable(new Tuple<>(), field, expected[i]));
+			Tuple<Type.Field> fields = new Tuple<>(new Type.Field(field, expected[i]));
 			result[i] = new Type.Record(true, fields);
 		}
 		return result;
@@ -1866,7 +1863,7 @@ public class FlowTypeCheck {
 		Type.Array arr = new Type.Array(Type.Any);
 		SemanticType src = checkExpression(expr.getOperand(), environment, arr);
 		checkIsSubtype(expected, Type.Int, environment, expr);
-		return SemanticType.Int;
+		return Type.Int;
 	}
 
 	private SemanticType checkArrayInitialiser(Expr.ArrayInitialiser expr, Environment environment, Type... expected) {
@@ -1880,7 +1877,7 @@ public class FlowTypeCheck {
 		SemanticType element;
 		switch(ts.length) {
 		case 0:
-			element = SemanticType.Void;
+			element = Type.Void;
 			break;
 		case 1:
 			element = ts[0];
@@ -1937,7 +1934,7 @@ public class FlowTypeCheck {
 		SemanticType valueT = checkExpression(value, environment, getElementTypes(expectedArrays));
 		//
 		SemanticType.Array sourceArrayT = checkIsArrayType(sourceT, AccessMode.READING, environment, source);
-		checkIsSubtype(SemanticType.Int, subscriptT, environment, subscript);
+		checkIsSubtype(Type.Int, subscriptT, environment, subscript);
 		checkIsSubtype(sourceArrayT.getElement(), valueT, environment, value);
 		return sourceArrayT;
 	}
@@ -1977,7 +1974,7 @@ public class FlowTypeCheck {
 		if (types.size() > 0) {
 			// Parameter types have been given, so use them to help resolve
 			// declaration.
-			binding = resolveAsCallable(expr.getName(), toSemanticTypes(types), new Tuple<Identifier>(), env);
+			binding = resolveAsCallable(expr.getName(), types, new Tuple<Identifier>(), env);
 		} else {
 			// No parameters we're given, therefore attempt to resolve
 			// uniquely.
@@ -1986,7 +1983,7 @@ public class FlowTypeCheck {
 		// Set descriptor for this expression
 		expr.setSignature(expr.getHeap().allocate(binding.getCandidiateDeclaration().getType()));
 		//
-		return toSemanticType(binding.getConcreteType());
+		return binding.getConcreteType();
 	}
 
 	private SemanticType checkLambdaDeclaration(Decl.Lambda expr, Environment env, Type... expected) {
@@ -2006,7 +2003,7 @@ public class FlowTypeCheck {
 		// Update with inferred signature
 		expr.setType(expr.getHeap().allocate(signature));
 		// Done
-		return toSemanticType(signature);
+		return signature;
 	}
 
 	/**
@@ -2178,9 +2175,9 @@ public class FlowTypeCheck {
 
 	private Type.Record extractRecordType(Type type, Tuple<Identifier> fields, SyntacticItem element) {
 		if(type == Type.Any) {
-			Decl.Variable[] variables = new Decl.Variable[fields.size()];
+			Type.Field[] variables = new Type.Field[fields.size()];
 			for (int i = 0; i != fields.size(); ++i) {
-				variables[i] = new Decl.Variable(new Tuple<>(), fields.get(i), Type.Any);
+				variables[i] = new Type.Field(fields.get(i), Type.Any);
 			}
 			return new Type.Record(false, new Tuple<>(variables));
 		} else {
@@ -2227,7 +2224,7 @@ public class FlowTypeCheck {
 	private void extractRecordTypes(Type type, Tuple<Identifier> fields, List<Type.Record> types) throws ResolutionError {
 		if(type instanceof Type.Record) {
 			Type.Record t = (Type.Record) type;
-			Tuple<Decl.Variable> t_fields = t.getFields();
+			Tuple<Type.Field> t_fields = t.getFields();
 			// Check this record looks like a real candidate.
 			if (t_fields.size() == fields.size() || (t_fields.size() <= fields.size() && t.isOpen())) {
 				int matches = 0;
@@ -2380,7 +2377,7 @@ public class FlowTypeCheck {
 	 *
 	 * @return
 	 */
-	private Binding resolveAsCallable(Name name, SemanticType[] arguments, Tuple<Identifier> lifetimeArguments, LifetimeRelation lifetimes) {
+	private Binding resolveAsCallable(Name name, Tuple<Type> arguments, Tuple<Identifier> lifetimeArguments, LifetimeRelation lifetimes) {
 		try {
 			// Identify all function or macro declarations which should be
 			// considered
@@ -2481,7 +2478,7 @@ public class FlowTypeCheck {
 	 *            Within relationship beteween declared lifetimes
 	 * @return
 	 */
-	private List<Binding> bindCallableCandidates(List<Decl.Callable> candidates, SemanticType[] arguments,
+	private List<Binding> bindCallableCandidates(List<Decl.Callable> candidates, Tuple<Type> arguments,
 			Tuple<Identifier> lifetimeArguments, LifetimeRelation lifetimes) {
 		ArrayList<Binding> bindings = new ArrayList<>();
 		for (int i = 0; i != candidates.size(); ++i) {
@@ -2502,12 +2499,12 @@ public class FlowTypeCheck {
 	}
 
 	private void generateApplicableBindings(Decl.Method candidate, List<Binding> bindings,
-			SemanticType[] arguments, Tuple<Identifier> lifetimeArguments, LifetimeRelation lifetimes) {
+			Tuple<Type> arguments, Tuple<Identifier> lifetimeArguments, LifetimeRelation lifetimes) {
 		Type.Method type = candidate.getType();
 		Tuple<Identifier> lifetimeParameters = type.getLifetimeParameters();
 		Tuple<Type> parameters = type.getParameters();
 		//
-		if (parameters.size() != arguments.length
+		if (parameters.size() != arguments.size()
 				|| (lifetimeArguments.size() > 0 && lifetimeArguments.size() != lifetimeParameters.size())) {
 			// Differing number of parameters / arguments. Since we don't
 			// support variable-length argument lists (yet), there is nothing
@@ -2642,7 +2639,7 @@ public class FlowTypeCheck {
 	 * @param args
 	 * @return
 	 */
-	private Identifier[] extractLifetimes(SemanticType... args) {
+	private Identifier[] extractLifetimes(Tuple<Type> args) {
 		final HashSet<Identifier> lifetimes = new HashSet<>();
 		// Construct the type visitor
 		AbstractVisitor visitor = new AbstractVisitor() {
@@ -2659,8 +2656,8 @@ public class FlowTypeCheck {
 			}
 		};
 		// Apply visitor to each argument
-		for (int i = 0; i != args.length; ++i) {
-			visitor.visitSemanticType(args[i]);
+		for (int i = 0; i != args.size(); ++i) {
+			visitor.visitSemanticType(args.get(i));
 		}
 		// Done
 		return lifetimes.toArray(new Identifier[lifetimes.size()]);
@@ -2706,9 +2703,9 @@ public class FlowTypeCheck {
 	 * @param args
 	 * @return
 	 */
-	private boolean isApplicable(Type.Callable candidate, LifetimeRelation lifetimes, SemanticType... args) {
+	private boolean isApplicable(Type.Callable candidate, LifetimeRelation lifetimes, Tuple<Type> args) {
 		Tuple<Type> parameters = candidate.getParameters();
-		if (parameters.size() != args.length) {
+		if (parameters.size() != args.size()) {
 			// Differing number of parameters / arguments. Since we don't
 			// support variable-length argument lists (yet), there is nothing
 			// more to consider.
@@ -2717,9 +2714,9 @@ public class FlowTypeCheck {
 			try {
 				// Number of parameters matches number of arguments. Now, check that
 				// each argument is a subtype of its corresponding parameter.
-				for (int i = 0; i != args.length; ++i) {
-					SemanticType param = toSemanticType(parameters.get(i));
-					if (!subtypeOperator.isSubtype(param, args[i], lifetimes)) {
+				for (int i = 0; i != args.size(); ++i) {
+					SemanticType param = parameters.get(i);
+					if (!subtypeOperator.isSubtype(param, args.get(i), lifetimes)) {
 						return false;
 					}
 				}
@@ -2787,7 +2784,7 @@ public class FlowTypeCheck {
 		return bestValidWinner ? best : null;
 	}
 
-	private String parameterString(SemanticType... paramTypes) {
+	private String parameterString(Tuple<Type> paramTypes) {
 		String paramStr = "(";
 		boolean firstTime = true;
 		if (paramTypes == null) {
@@ -2887,8 +2884,8 @@ public class FlowTypeCheck {
 			// Number of parameters matches number of arguments. Now, check that
 			// each argument is a subtype of its corresponding parameter.
 			for (int i = 0; i != parentParams.size(); ++i) {
-				SemanticType parentParam = toSemanticType(parentParams.get(i));
-				SemanticType childParam = toSemanticType(childParams.get(i));
+				SemanticType parentParam = parentParams.get(i);
+				SemanticType childParam = childParams.get(i);
 				if (!subtypeOperator.isSubtype(parentParam, childParam, lifetimes)) {
 					return false;
 				}
@@ -2904,25 +2901,12 @@ public class FlowTypeCheck {
 	// Helpers
 	// ==========================================================================
 
-	private SemanticType toSemanticType(Type type) {
-		// FIXME: helpful to do more here?
-		return new SemanticType.Leaf(type);
-	}
-
-	private SemanticType[] toSemanticTypes(Tuple<Type> types) {
-		SemanticType[] result = new SemanticType[types.size()];
-		for(int i=0;i!=result.length;++i) {
-			result[i] = toSemanticType(types.get(i));
-		}
-		return result;
-	}
-
-	private void checkIsSubtype(Type[] lhs, Type rhs, LifetimeRelation lifetimes, SyntacticItem element) {
+	private void checkIsSubtype(Type[] lhs, SemanticType rhs, LifetimeRelation lifetimes, SyntacticItem element) {
 		// FIXME: perhaps could optimise this by having Type-oriented subtype operator
 		// to avoid conversion to SemanticType.
 		for(int i=0;i!=lhs.length;++i) {
 			try {
-				if (subtypeOperator.isSubtype(toSemanticType(lhs[i]), toSemanticType(rhs), lifetimes)) {
+				if (subtypeOperator.isSubtype(lhs[i], rhs, lifetimes)) {
 					return;
 				}
 			} catch (NameResolver.ResolutionError e) {
@@ -2931,30 +2915,6 @@ public class FlowTypeCheck {
 		}
 		// FIXME: broken!!
 		syntaxError(errorMessage(SUBTYPE_ERROR, lhs, rhs), element);
-	}
-
-	private void checkIsSubtype(Type[] lhs, SemanticType rhs, LifetimeRelation lifetimes, SyntacticItem element) {
-		// FIXME: perhaps could optimise this by having Type-oriented subtype operator
-		// to avoid conversion to SemanticType.
-		for(int i=0;i!=lhs.length;++i) {
-			try {
-				if (subtypeOperator.isSubtype(toSemanticType(lhs[i]), rhs, lifetimes)) {
-					return;
-				}
-			} catch (NameResolver.ResolutionError e) {
-				syntaxError(e.getMessage(), e.getName(), e);
-			}
-		}
-		// TODO: this should be made consistent with existing error reporting framework at some point.
-		String err = "expected type ";
-		for(int i=0;i!=lhs.length;++i) {
-			if(i != 0) {
-				err = err + " or ";
-			}
-			err = err + lhs[i];
-		}
-		err += ", found " + rhs;
-		syntaxError(err, element);
 	}
 
 	private void checkIsSubtype(SemanticType lhs, SemanticType rhs, LifetimeRelation lifetimes, SyntacticItem element) {
@@ -2998,8 +2958,7 @@ public class FlowTypeCheck {
 	private void checkNonEmpty(Decl.Variable d, LifetimeRelation lifetimes) {
 		try {
 			// FIXME: conversion to semantic type seems unnecessary here?
-			SemanticType type = toSemanticType(d.getType());
-			if (subtypeOperator.isVoid(type, lifetimes)) {
+			if (subtypeOperator.isVoid(d.getType(), lifetimes)) {
 				syntaxError("empty type encountered", d.getType());
 			}
 		} catch (NameResolver.ResolutionError e) {
@@ -3162,7 +3121,7 @@ public class FlowTypeCheck {
 		public SemanticType getType(Decl.Variable var) {
 			SemanticType refined = refinements.get(var);
 			if (refined == null) {
-				return toSemanticType(var.getType());
+				return var.getType();
 			} else {
 				return refined;
 			}

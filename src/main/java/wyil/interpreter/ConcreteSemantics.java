@@ -577,9 +577,9 @@ public class ConcreteSemantics implements AbstractSemantics {
 			public RValue.Bool is(Type type, Interpreter instance) throws ResolutionError {
 				if (type instanceof Type.Record) {
 					Type.Record t = (Type.Record) type;
-					Tuple<Decl.Variable> tFields = t.getFields();
+					Tuple<Type.Field> tFields = t.getFields();
 					for (int i = 0; i != tFields.size(); ++i) {
-						Decl.Variable f = tFields.get(i);
+						Type.Field f = tFields.get(i);
 						if (hasField(f.getName())) {
 							RValue val = read(f.getName());
 							// Matching field
@@ -602,10 +602,10 @@ public class ConcreteSemantics implements AbstractSemantics {
 			public RValue convert(Type type) {
 				if (type instanceof Type.Record) {
 					Type.Record t = (Type.Record) type;
-					Tuple<Decl.Variable> fields = t.getFields();
+					Tuple<Type.Field> fields = t.getFields();
 					RValue.Record rec = this;
 					for (int i = 0; i != fields.size(); ++i) {
-						Decl.Variable f = fields.get(i);
+						Type.Field f = fields.get(i);
 						RValue v = this.read(f.getName()).convert(f.getType());
 						rec = rec.write(f.getName(), v);
 					}

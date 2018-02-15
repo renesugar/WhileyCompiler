@@ -698,7 +698,7 @@ public class VerificationConditionGenerator {
 	 * @return
 	 */
 	private Context translateVariableAssign(WhileyFile.Expr.VariableAccess lval, Expr rval,Context context) {
-		WhileyFile.Decl.Variable decl = (WhileyFile.Decl.Variable) lval.getVariableDeclaration();
+		WhileyFile.Decl.Variable decl = lval.getVariableDeclaration();
 		context = context.havoc(decl);
 		WyalFile.VariableDeclaration nVersionedVar = context.read(decl);
 		Expr.VariableAccess var = new Expr.VariableAccess(nVersionedVar);
@@ -2391,10 +2391,10 @@ public class VerificationConditionGenerator {
 			result = new WyalFile.Type.Array(elem);
 		} else if (type instanceof Type.Record) {
 			Type.Record rt = (Type.Record) type;
-			Tuple<WhileyFile.Decl.Variable> fields = rt.getFields();
+			Tuple<Type.Field> fields = rt.getFields();
 			WyalFile.FieldDeclaration[] elements = new WyalFile.FieldDeclaration[fields.size()];
 			for (int i = 0; i != elements.length; ++i) {
-				WhileyFile.Decl.Variable field = fields.get(i);
+				Type.Field field = fields.get(i);
 				WyalFile.Type fieldType = convert(field.getType(), context);
 				elements[i] = new WyalFile.FieldDeclaration(fieldType, new WyalFile.Identifier(field.getName().get()));
 			}
@@ -2452,9 +2452,9 @@ public class VerificationConditionGenerator {
 			return typeMayHaveInvariant(lt.getElement(), context);
 		} else if (type instanceof Type.Record) {
 			Type.Record rt = (Type.Record) type;
-			Tuple<WhileyFile.Decl.Variable> fields = rt.getFields();
+			Tuple<Type.Field> fields = rt.getFields();
 			for (int i = 0; i != fields.size(); ++i) {
-				WhileyFile.Decl.Variable field = fields.get(i);
+				Type.Field field = fields.get(i);
 				if (typeMayHaveInvariant(field.getType(), context)) {
 					return true;
 				}

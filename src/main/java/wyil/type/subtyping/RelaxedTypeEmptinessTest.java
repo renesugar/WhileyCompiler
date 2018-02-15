@@ -42,12 +42,12 @@ import wyc.lang.WhileyFile.Type;
  * layout and, hence, many more conversions between layouts are required.
  * </p>
  *
- * @see TypeEmptinessTest
+ * @see SemanticTypeEmptinessTest
  *
  * @author David J. Pearce
  *
  */
-public class RelaxedTypeEmptinessTest extends TypeEmptinessTest {
+public class RelaxedTypeEmptinessTest extends SemanticTypeEmptinessTest {
 
 	public RelaxedTypeEmptinessTest(NameResolver resolver) {
 		super(resolver);
@@ -56,17 +56,17 @@ public class RelaxedTypeEmptinessTest extends TypeEmptinessTest {
 	@Override
 	protected int matchRecordFields(Atom<Type.Record> lhs, Atom<Type.Record> rhs, Assumptions assumptions,
 			LifetimeRelation lifetimes) throws ResolutionError {
-		Tuple<Decl.Variable> lhsFields = lhs.type.getFields();
-		Tuple<Decl.Variable> rhsFields = rhs.type.getFields();
+		Tuple<Type.Field> lhsFields = lhs.type.getFields();
+		Tuple<Type.Field> rhsFields = rhs.type.getFields();
 		//
 		boolean sign = (lhs.sign == rhs.sign);
 		int matches = 0;
 		//
 		for (int i = 0; i != lhsFields.size(); ++i) {
-			Decl.Variable lhsField = lhsFields.get(i);
+			Type.Field lhsField = lhsFields.get(i);
 			Term<?> lhsTerm = new Term<>(lhs.sign, lhsField.getType(), lhs.maximise);
 			for (int j = 0; j != rhsFields.size(); ++j) {
-				Decl.Variable rhsField = rhsFields.get(j);
+				Type.Field rhsField = rhsFields.get(j);
 				if (!lhsField.getName().equals(rhsField.getName())) {
 					continue;
 				} else {
@@ -97,7 +97,7 @@ public class RelaxedTypeEmptinessTest extends TypeEmptinessTest {
 
 	@Override
 	protected boolean analyseRecordMatches(int matches, boolean lhsSign, boolean lhsOpen,
-			Tuple<Decl.Variable> lhsFields, boolean rhsSign, boolean rhsOpen, Tuple<Decl.Variable> rhsFields) {
+			Tuple<Type.Field> lhsFields, boolean rhsSign, boolean rhsOpen, Tuple<Type.Field> rhsFields) {
 		return super.analyseRecordMatches(matches, lhsSign, true, lhsFields, rhsSign, true, rhsFields);
 	}
 }

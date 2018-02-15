@@ -177,15 +177,15 @@ import static wyc.lang.WhileyFile.Name;
  * @author David J. Pearce
  *
  */
-public class TypeEmptinessTest implements EmptinessTest<Type> {
+public class SemanticTypeEmptinessTest implements EmptinessTest<SemanticType> {
 	protected final NameResolver resolver;
 
-	public TypeEmptinessTest(NameResolver resolver) {
+	public SemanticTypeEmptinessTest(NameResolver resolver) {
 		this.resolver = resolver;
 	}
 
 	@Override
-	public boolean isVoid(Type lhs, EmptinessTest.State lhsState, Type rhs, EmptinessTest.State rhsState,
+	public boolean isVoid(SemanticType lhs, EmptinessTest.State lhsState, SemanticType rhs, EmptinessTest.State rhsState,
 			LifetimeRelation lifetimes) throws ResolutionError {
 		// FIXME: this is really temporary for now.
 		Term<?> lhsTerm = new Term<>(lhsState.sign, lhs, lhsState.maximise);
@@ -273,10 +273,17 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 		} else {
 			// In this case, we still have items on the worklist which need to
 			// be processed. That is, broken down into "atomic" terms.
-			Term<Type> item = worklist.pop();
-			Type t = item.type;
+			Term<SemanticType> item = worklist.pop();
+			SemanticType t = item.type;
 			//
 			switch (t.getOpcode()) {
+			case SEMTYPE_intersection: {
+				throw new RuntimeException("implement me!");
+			}
+			case SEMTYPE_difference: {
+				throw new RuntimeException("implement me!");
+			}
+			case SEMTYPE_union:
 			case TYPE_union: {
 				Type.Union ut = (Type.Union) t;
 				boolean conjunct = !item.sign;
@@ -311,7 +318,7 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 				break;
 			}
 			default:
-				truths.add(new Atom(item.sign, (Type.Atom) item.type, item.maximise));
+				truths.add(new Atom(item.sign, (SemanticType.Atom) item.type, item.maximise));
 			}
 			return isVoid(truths, worklist, assumptions, lifetimes);
 		}
@@ -368,8 +375,8 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 				// any & !any => void
 				// int & !int => void
 				return (aSign != bSign) ? true : false;
-			case TYPE_array:
-				return isVoidArray((Atom<Type.Array>) a, (Atom<Type.Array>) b, assumptions, lifetimes);
+			case SEMTYPE_array:
+				return isVoidArray((Atom<SemanticType.Array>) a, (Atom<SemanticType.Array>) b, assumptions, lifetimes);
 			case TYPE_record:
 				return isVoidRecord((Atom<Type.Record>) a, (Atom<Type.Record>) b, assumptions, lifetimes);
 			case TYPE_reference:
@@ -408,6 +415,14 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 
 	private static int normaliseOpcode(int opcode) {
 		switch (opcode) {
+		case TYPE_array:
+			return SEMTYPE_array;
+		case TYPE_record:
+			return SEMTYPE_record;
+		case TYPE_reference:
+			return SEMTYPE_reference;
+		case TYPE_union:
+			return SEMTYPE_union;
 		case TYPE_method:
 			return TYPE_function;
 		case TYPE_staticreference:
@@ -443,7 +458,7 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 	 * @return
 	 * @throws ResolutionError
 	 */
-	protected boolean isVoidArray(Atom<Type.Array> lhs, Atom<Type.Array> rhs, Assumptions assumptions,
+	protected boolean isVoidArray(Atom<SemanticType.Array> lhs, Atom<SemanticType.Array> rhs, Assumptions assumptions,
 			LifetimeRelation lifetimes) throws ResolutionError {
 		Term<?> lhsTerm = new Term<>(lhs.sign, lhs.type.getElement(), lhs.maximise);
 		Term<?> rhsTerm = new Term<>(rhs.sign, rhs.type.getElement(), rhs.maximise);
@@ -499,8 +514,8 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 	 */
 	protected boolean isVoidRecord(Atom<Type.Record> lhs, Atom<Type.Record> rhs, Assumptions assumptions,
 			LifetimeRelation lifetimes) throws ResolutionError {
-		Tuple<Decl.Variable> lhsFields = lhs.type.getFields();
-		Tuple<Decl.Variable> rhsFields = rhs.type.getFields();
+		Tuple<Type.Field> lhsFields = lhs.type.getFields();
+		Tuple<Type.Field> rhsFields = rhs.type.getFields();
 		//
 		if (lhs.sign || rhs.sign) {
 			// Attempt to match all fields In the positive-positive case this
@@ -524,17 +539,17 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 
 	protected int matchRecordFields(Atom<Type.Record> lhs, Atom<Type.Record> rhs, Assumptions assumptions,
 			LifetimeRelation lifetimes) throws ResolutionError {
-		Tuple<Decl.Variable> lhsFields = lhs.type.getFields();
-		Tuple<Decl.Variable> rhsFields = rhs.type.getFields();
+		Tuple<Type.Field> lhsFields = lhs.type.getFields();
+		Tuple<Type.Field> rhsFields = rhs.type.getFields();
 		//
 		boolean sign = (lhs.sign == rhs.sign);
 		int matches = 0;
 		//
 		for (int i = 0; i != lhsFields.size(); ++i) {
-			Decl.Variable lhsField = lhsFields.get(i);
+			Type.Field lhsField = lhsFields.get(i);
 			Term<?> lhsTerm = new Term<>(lhs.sign, lhsField.getType(), lhs.maximise);
 			for (int j = 0; j != rhsFields.size(); ++j) {
-				Decl.Variable rhsField = rhsFields.get(j);
+				Type.Field rhsField = rhsFields.get(j);
 				if (!lhsField.getName().equals(rhsField.getName())) {
 					continue;
 				} else {
@@ -563,7 +578,7 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 	}
 
 	protected boolean analyseRecordMatches(int matches, boolean lhsSign, boolean lhsOpen,
-			Tuple<Decl.Variable> lhsFields, boolean rhsSign, boolean rhsOpen, Tuple<Decl.Variable> rhsFields) {
+			Tuple<Type.Field> lhsFields, boolean rhsSign, boolean rhsOpen, Tuple<Type.Field> rhsFields) {
 		// NOTE: Don't touch this method unless you know what you are doing. And, trust
 		// me, you don't know what you are doing.
 		//
@@ -605,8 +620,8 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 		EQUAL, UNCOMPARABLE, SMALLER, GREATER
 	}
 
-	protected State compare(int matches, boolean lhsOpen, Tuple<Decl.Variable> lhsFields, boolean rhsOpen,
-			Tuple<Decl.Variable> rhsFields) {
+	protected State compare(int matches, boolean lhsOpen, Tuple<Type.Field> lhsFields, boolean rhsOpen,
+			Tuple<Type.Field> rhsFields) {
 		int lhsSize = lhsFields.size();
 		int rhsSize = rhsFields.size();
 		//
@@ -825,13 +840,13 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 	// Helpers
 	// ========================================================================
 
-	private final static class Worklist extends ArrayList<Term<Type>> {
+	private final static class Worklist extends ArrayList<Term<SemanticType>> {
 		/**
 		 *
 		 */
 		private static final long serialVersionUID = 1L;
 
-		public Term<Type> top() {
+		public Term<SemanticType> top() {
 			return get(size() - 1);
 		}
 
@@ -839,18 +854,18 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 			add(item);
 		}
 
-		public void push(boolean sign, Type type, boolean maximise) {
+		public void push(boolean sign, SemanticType type, boolean maximise) {
 			add(new Term(sign, type, maximise));
 		}
 
-		public void push(boolean sign, Type[] types, boolean maximise) {
+		public void push(boolean sign, SemanticType[] types, boolean maximise) {
 			for (int i = 0; i != types.length; ++i) {
 				add(new Term(sign, types[i], maximise));
 			}
 		}
 
-		public Term<Type> pop() {
-			Term<Type> i = get(size() - 1);
+		public Term<SemanticType> pop() {
+			Term<SemanticType> i = get(size() - 1);
 			remove(size() - 1);
 			return i;
 		}
@@ -863,7 +878,7 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 		}
 	}
 
-	public static class Term<T extends Type> {
+	public static class Term<T extends SemanticType> {
 		public final boolean sign;
 		public final T type;
 		public final boolean maximise;
@@ -894,7 +909,7 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 		}
 	}
 
-	protected static class Atom<T extends Type.Atom> extends Term<T> {
+	protected static class Atom<T extends SemanticType.Atom> extends Term<T> {
 		public Atom(boolean sign, T type, boolean maximise) {
 			super(sign, type, maximise);
 		}
@@ -979,7 +994,7 @@ public class TypeEmptinessTest implements EmptinessTest<Type> {
 			}
 		}
 
-		protected int indexOf(boolean lhsSign, Type lhs, boolean rhsSign, Type rhs) {
+		protected int indexOf(boolean lhsSign, SemanticType lhs, boolean rhsSign, SemanticType rhs) {
 			int lhsSize = lhs.getHeap().size();
 			int rhsSize = rhs.getHeap().size();
 			int lhsIndex = lhs.getIndex();
