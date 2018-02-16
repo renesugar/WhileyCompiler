@@ -21,6 +21,7 @@ import static wybs.util.AbstractCompilationUnit.ITEM_null;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import wybs.lang.*;
@@ -40,8 +41,9 @@ import wyil.type.subtyping.EmptinessTest.LifetimeRelation;
 import wyil.type.subtyping.RelaxedTypeEmptinessTest;
 import wyil.type.subtyping.SemanticTypeEmptinessTest;
 import wyil.type.subtyping.SubtypeOperator;
-import wyil.type.util.SemanticTypeFunction;
 import wyil.type.util.TypeArrayExtractor;
+import wyil.type.util.TypeArrayFilter;
+import wyil.type.util.TypeFilter;
 import wyc.lang.WhileyFile;
 import wyc.lang.WhileyFile.Decl;
 import wyc.lang.WhileyFile.Type;
@@ -109,7 +111,7 @@ public class FlowTypeCheck {
 	private final CompileTask builder;
 	private final NameResolver resolver;
 	private final SubtypeOperator subtypeOperator;
-	private final SemanticTypeFunction<SemanticType,Type.Array> arrayExtractor;
+	private final Function<SemanticType,SemanticType.Array> arrayExtractor;
 	private final Function<Type[],Type.Array[]> arrayFilter;
 
 	public FlowTypeCheck(CompileTask builder) {
@@ -117,7 +119,8 @@ public class FlowTypeCheck {
 		this.resolver = builder.getNameResolver();
 		this.subtypeOperator = new SubtypeOperator(resolver,
 				new RelaxedTypeEmptinessTest(resolver));
-		this.arrayExtractor = new TypeArrayExtractor();
+		this.arrayExtractor = new TypeArrayExtractor(resolver);
+		this.arrayFilter = new TypeFilter(resolver,Type.Array.class,new Type.Array(Type.Any));
 	}
 
 	// =========================================================================
@@ -1305,7 +1308,11 @@ public class FlowTypeCheck {
 
 	public Type checkArrayLVal(Expr.ArrayAccess lval, Environment environment) {
 		Type srcT = checkLVal((LVal) lval.getFirstOperand(), environment);
-		Type.Array arrT = arrayExtractor.apply(srcT);
+		// NOTE: the following cast is safe because, given a Type, we cannot extract a
+		// SemanticType. Furthermore, since we know the result is an instanceof
+		// SemanticType.Array, it follows that it must be an instance of Type.Array (or
+		// null).
+		Type.Array arrT = (Type.Array) arrayExtractor.apply(srcT);
 		if(arrT == null) {
 			return syntaxError("expected array type", lval);
 		} else {
@@ -2095,7 +2102,6 @@ public class FlowTypeCheck {
 	private SemanticType.Record checkIsRecordType(SemanticType type, AccessMode mode, LifetimeRelation lifetimes,
 			SyntacticItem element) {
 		// FIXME: this prohibits effective array types
-		System.out.println("CHECKING: " + type + " => record");
 		SemanticType.Record t = type.asRecord(resolver);
 		if (t != null) {
 			return t;

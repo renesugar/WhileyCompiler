@@ -3674,9 +3674,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 		public Type substitute(Map<Identifier,Identifier> binding);
 
 		@Override
-		public Type.Array asArray(NameResolver resolver);
-
-		@Override
 		public Type.Record asRecord(NameResolver resolver);
 
 		@Override
@@ -3703,11 +3700,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 
 			AbstractType(int opcode, SyntacticItem... operands) {
 				super(opcode, operands);
-			}
-
-			@Override
-			public Type.Array asArray(NameResolver resolver) {
-				return null;
 			}
 
 			@Override
@@ -3961,11 +3953,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Type.Array asArray(NameResolver resolver) {
-				return this;
-			}
-
-			@Override
 			public Type.Reference asReference(NameResolver resolver) {
 				return null;
 			}
@@ -4047,11 +4034,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Type.Array asArray(NameResolver resolver) {
-				return null;
-			}
-
-			@Override
 			public Type.Reference clone(SyntacticItem[] operands) {
 				if (operands.length == 1) {
 					return new Type.Reference((Type) operands[0]);
@@ -4109,11 +4091,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 				} else {
 					return new Type.Record(isOpen(),after);
 				}
-			}
-
-			@Override
-			public Type.Array asArray(NameResolver resolver) {
-				return null;
 			}
 
 			@Override
@@ -4220,18 +4197,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Type.Array asArray(NameResolver resolver) {
-				try {
-					Decl.Type decl = resolver.resolveExactly(getName(), Decl.Type.class);
-					return decl.getType().asArray(resolver);
-				} catch (NameResolver.ResolutionError e) {
-					// FIXME: This is obviously not ideal, but it's a temporary fix for now. In the
-					// future, the use of NameResolver will be deprecated.
-					throw new RuntimeException(e);
-				}
-			}
-
-			@Override
 			public Type.Record asRecord(NameResolver resolver) {
 				try {
 					Decl.Type decl = resolver.resolveExactly(getName(), Decl.Type.class);
@@ -4327,29 +4292,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			@Override
 			public Type.Union clone(SyntacticItem[] operands) {
 				return new Type.Union(ArrayUtils.toArray(Type.class, operands));
-			}
-
-			@Override
-			public Type.Array asArray(NameResolver resolver) {
-				Type[] types = getAll();
-				Type[] elements = new Type[types.length];
-				for(int i=0;i!=types.length;++i) {
-					Type.Array array = types[i].asArray(resolver);
-					if(array == null) {
-						elements[i] = null;
-					} else {
-						elements[i] = array.getElement();
-					}
-				}
-				elements = ArrayUtils.removeAll(elements, null);
-				switch(elements.length) {
-				case 0:
-					return new Type.Array(Type.Void);
-				case 1:
-					return new Type.Array(elements[0]);
-				default:
-					return new Type.Array(new Type.Union(elements));
-				}
 			}
 
 			@Override
@@ -4653,8 +4595,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 
 	public static interface SemanticType extends SyntacticItem {
 
-		public SemanticType.Array asArray(NameResolver resolver);
-
 		public SemanticType.Record asRecord(NameResolver resolver);
 
 		public SemanticType.Reference asReference(NameResolver resolver);
@@ -4671,11 +4611,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 
 			public AbstractSemanticType(int opcode, SyntacticItem... operands) {
 				super(opcode,operands);
-			}
-
-			@Override
-			public Array asArray(NameResolver resolver) {
-				return null;
 			}
 
 			@Override
@@ -4825,11 +4760,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Array asArray(NameResolver resolver) {
-				return this;
-			}
-
-			@Override
 			public SyntacticItem clone(SyntacticItem[] operands) {
 				return new Array((SemanticType) operands[0]);
 			}
@@ -4959,29 +4889,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Array asArray(NameResolver resolver) {
-				SemanticType[] types = getAll();
-				SemanticType[] elements = new SemanticType[types.length];
-				for(int i=0;i!=types.length;++i) {
-					SemanticType.Array array = types[i].asArray(resolver);
-					if(array == null) {
-						elements[i] = null;
-					} else {
-						elements[i] = array.getElement();
-					}
-				}
-				elements = ArrayUtils.removeAll(elements, null);
-				switch(elements.length) {
-				case 0:
-					return new SemanticType.Array(Type.Void);
-				case 1:
-					return new SemanticType.Array(elements[0]);
-				default:
-					return new SemanticType.Array(new SemanticType.Union(elements));
-				}
-			}
-
-			@Override
 			public Record asRecord(NameResolver resolver) {
 				// TODO Auto-generated method stub
 				return null;
@@ -5027,17 +4934,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			}
 
 			@Override
-			public Array asArray(NameResolver resolver) {
-				SemanticType[] types = getAll();
-				SemanticType[] elements = new SemanticType[types.length];
-				for(int i=0;i!=types.length;++i) {
-					SemanticType.Array array = types[i].asArray(resolver);
-					elements[i] = array.getElement();
-				}
-				return new SemanticType.Array(new SemanticType.Intersection(elements));
-			}
-
-			@Override
 			public Record asRecord(NameResolver resolver) {
 				// TODO Auto-generated method stub
 				return null;
@@ -5080,17 +4976,6 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 
 			public SemanticType getRightHandSide()  {
 				return (SemanticType) get(1);
-			}
-
-			@Override
-			public Array asArray(NameResolver resolver) {
-				SemanticType.Array lhs = getLeftHandSide().asArray(resolver);
-				SemanticType.Array rhs = getRightHandSide().asArray(resolver);
-				if (rhs == null) {
-					return lhs;
-				} else {
-					return new SemanticType.Array(new SemanticType.Difference(lhs.getElement(), rhs.getElement()));
-				}
 			}
 
 			@Override

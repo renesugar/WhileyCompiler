@@ -16,7 +16,10 @@ package wyil.type.util;
 import static wyc.util.ErrorMessages.errorMessage;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 import wybs.lang.CompilationUnit;
 import wybs.lang.NameResolver;
@@ -27,6 +30,7 @@ import wyc.lang.WhileyFile.Decl;
 import wyc.lang.WhileyFile.Type;
 import wyc.lang.WhileyFile.Type.Array;
 import wyc.util.ErrorMessages;
+import wycc.util.ArrayUtils;
 
 /**
  * <p>
@@ -51,28 +55,31 @@ import wyc.util.ErrorMessages;
  * @author David J. Pearce
  *
  */
-public class TypeArrayFilter implements SemanticTypeFunction<Type,Type.Array> {
+public class TypeFilter<T extends Type, U> implements Function<Type[],T[]> {
 	private final NameResolver resolver;
+	private final Class<T> kind;
+	private final T any;
 
-	public TypeArrayFilter(NameResolver resolver) {
+	public TypeFilter(NameResolver resolver, Class<T> kind, T any) {
 		this.resolver = resolver;
+		this.kind = kind;
+		this.any = any;
 	}
 
 	@Override
-	public Array apply(Type t) {
-		ArrayList<Array> results = new ArrayList<>();
-		filter(t, results);
-		if (results.size() != 1) {
-			// FIXME: this is a temporary hack. We really must do something better here.
-			return null;
-		} else {
-			return results.get(0);
+	public T[] apply(Type[] types) {
+		ArrayList<T> results = new ArrayList<>();
+		for (int i = 0; i != types.length; ++i) {
+			filter(types[i], results);
 		}
+		return ArrayUtils.toArray(kind, results);
 	}
 
-	public void filter(Type type, List<Type.Array> results) {
-		if (type instanceof Type.Array) {
-			results.add((Type.Array) type);
+	public void filter(Type type, List<T> results) {
+		if (kind.isInstance(type)) {
+			results.add((T) type);
+		} else if(type instanceof Type.Any) {
+			results.add(any);
 		} else if (type instanceof Type.Nominal) {
 			Type.Nominal t = (Type.Nominal) type;
 			try {
