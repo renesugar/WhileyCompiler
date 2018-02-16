@@ -21,6 +21,7 @@ import static wybs.util.AbstractCompilationUnit.ITEM_null;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.function.Function;
 
 import wybs.lang.*;
 import wybs.lang.NameResolver.ResolutionError;
@@ -39,6 +40,8 @@ import wyil.type.subtyping.EmptinessTest.LifetimeRelation;
 import wyil.type.subtyping.RelaxedTypeEmptinessTest;
 import wyil.type.subtyping.SemanticTypeEmptinessTest;
 import wyil.type.subtyping.SubtypeOperator;
+import wyil.type.util.SemanticTypeFunction;
+import wyil.type.util.TypeArrayExtractor;
 import wyc.lang.WhileyFile;
 import wyc.lang.WhileyFile.Decl;
 import wyc.lang.WhileyFile.Type;
@@ -106,12 +109,15 @@ public class FlowTypeCheck {
 	private final CompileTask builder;
 	private final NameResolver resolver;
 	private final SubtypeOperator subtypeOperator;
+	private final SemanticTypeFunction<SemanticType,Type.Array> arrayExtractor;
+	private final Function<Type[],Type.Array[]> arrayFilter;
 
 	public FlowTypeCheck(CompileTask builder) {
 		this.builder = builder;
 		this.resolver = builder.getNameResolver();
 		this.subtypeOperator = new SubtypeOperator(resolver,
 				new RelaxedTypeEmptinessTest(resolver));
+		this.arrayExtractor = new TypeArrayExtractor();
 	}
 
 	// =========================================================================
@@ -1299,10 +1305,14 @@ public class FlowTypeCheck {
 
 	public Type checkArrayLVal(Expr.ArrayAccess lval, Environment environment) {
 		Type srcT = checkLVal((LVal) lval.getFirstOperand(), environment);
-		Type.Array arrT = extractArrayType(srcT, lval);
-		checkExpression(lval.getSecondOperand(), environment, Type.Int);
-		//
-		return arrT.getElement();
+		Type.Array arrT = arrayExtractor.apply(srcT);
+		if(arrT == null) {
+			return syntaxError("expected array type", lval);
+		} else {
+			checkExpression(lval.getSecondOperand(), environment, Type.Int);
+			//
+			return arrT.getElement();
+		}
 	}
 
 	public Type checkRecordLVal(Expr.RecordAccess lval, Environment environment) {
@@ -1366,7 +1376,7 @@ public class FlowTypeCheck {
 				} else if ((i+1) == expressions.size() && (expected.size()-j) > 1) {
 					syntaxError("too few return values", expression);
 				}
-				checkExpression(expression, environment, expected.get(0));
+				checkExpression(expression, environment, expected.get(j));
 				j = j + 1;
 			}
 		}
@@ -1866,7 +1876,7 @@ public class FlowTypeCheck {
 	}
 
 	private SemanticType checkArrayInitialiser(Expr.ArrayInitialiser expr, Environment environment, Type... expected) {
-		Type.Array[] expectedArrays = extractArrayTypes(expected, expr);
+		Type.Array[] expectedArrays = arrayFilter.apply(expected);
 		Tuple<Expr> operands = expr.getOperands();
 		SemanticType[] ts = new SemanticType[operands.size()];
 		for (int i = 0; i != ts.length; ++i) {
@@ -1893,7 +1903,7 @@ public class FlowTypeCheck {
 	}
 
 	private SemanticType checkArrayGenerator(Expr.ArrayGenerator expr, Environment environment, Type... expected) {
-		Type.Array[] expectedArrays = extractArrayTypes(expected, expr);
+		Type.Array[] expectedArrays = arrayFilter.apply(expected);
 		Expr value = expr.getFirstOperand();
 		Expr length = expr.getSecondOperand();
 		//
@@ -1911,7 +1921,7 @@ public class FlowTypeCheck {
 		SemanticType sourceT = checkExpression(source, environment, expectedArrays);
 		SemanticType subscriptT = checkExpression(subscript, environment, Type.Int);
 		//
-		return sourceT.asArray(resolver).getElement();
+		return arrayExtractor.apply(sourceT).getElement();
 	}
 
 	private Type.Array[] toArrayTypes(Type[] types) {
@@ -1923,16 +1933,26 @@ public class FlowTypeCheck {
 	}
 
 	private SemanticType checkArrayUpdate(Expr.ArrayUpdate expr, Environment environment, Type... expected) {
-		Type.Array[] expectedArrays = extractArrayTypes(expected, expr);
 		Expr source = expr.getFirstOperand();
 		Expr subscript = expr.getSecondOperand();
 		Expr value = expr.getThirdOperand();
+		//
+		Type.Array[] expectedArrays = arrayFilter.apply(expected);
+		// FIXME: should check expectedArrays here!
+		if(expectedArrays.length == 0) {
+			return syntaxError("expected array type", source);
+		}
 		//
 		SemanticType sourceT = checkExpression(source, environment, expected);
 		SemanticType subscriptT = checkExpression(subscript, environment, Type.Int);
 		SemanticType valueT = checkExpression(value, environment, getElementTypes(expectedArrays));
 		//
-		SemanticType.Array sourceArrayT = checkIsArrayType(sourceT, AccessMode.READING, environment, source);
+		SemanticType.Array sourceArrayT = arrayExtractor.apply(sourceT);
+		if (sourceArrayT == null) {
+			// FIXME: is this check actually required? I don't think so because it will be
+			// covered by checkExpression above.
+			return syntaxError("expected array type", source);
+		}
 		checkIsSubtype(Type.Int, subscriptT, environment, subscript);
 		checkIsSubtype(sourceArrayT.getElement(), valueT, environment, value);
 		return sourceArrayT;
@@ -2054,76 +2074,12 @@ public class FlowTypeCheck {
 	// Array Helpers
 	// ===========================================================================================
 
-	/**
-	 * Check whether a given type is an array type of some sort.
-	 *
-	 * @param type
-	 * @return
-	 * @throws ResolutionError
-	 */
-	private SemanticType.Array checkIsArrayType(SemanticType type, AccessMode mode, LifetimeRelation lifetimes,
-			SyntacticItem element) {
-		// FIXME: this prohibits effective array types
-		SemanticType.Array t = type.asArray(resolver);
-		if (t != null) {
-			return t;
-		} else {
-			return syntaxError("expected array type", element);
-		}
-	}
-
 	public Type[] getElementTypes(Type.Array[] types) {
 		Type[] elements = new Type[types.length];
 		for(int i=0;i!=types.length;++i) {
 			elements[i] = types[i].getElement();
 		}
 		return elements;
-	}
-
-	private Type.Array extractArrayType(Type type, SyntacticItem element) {
-		// Quick sanity check
-		if(type == Type.Any) {
-			return new Type.Array(Type.Any);
-		} else {
-			//
-			try {
-				// FIXME: can this use Type.asArray instead?
-				ArrayList<Type.Array> arrays = new ArrayList<>();
-				extractArrayTypes(type, arrays);
-				if(arrays.size() == 0) {
-					return syntaxError("expected array type", element);
-				} else if(arrays.size() > 1) {
-					return syntaxError("ambiguous array type", element);
-				} else {
-					return arrays.get(0);
-				}
-			} catch(ResolutionError e) {
-				return syntaxError(e.getMessage(), element);
-			}
-		}
-	}
-
-	private Type.Array[] extractArrayTypes(Type[] type, SyntacticItem element) {
-		Type.Array[] types = new Type.Array[type.length];
-		for (int i = 0; i != types.length; ++i) {
-			types[i] = extractArrayType(type[i], element);
-		}
-		return ArrayUtils.removeAll(types, null);
-	}
-
-	private void extractArrayTypes(Type type, List<Type.Array> types) throws ResolutionError {
-		if(type instanceof Type.Array) {
-			types.add((Type.Array) type);
-		} else if(type instanceof Type.Nominal) {
-			Type.Nominal t = (Type.Nominal) type;
-			Decl.Type decl = resolver.resolveExactly(t.getName(), Decl.Type.class);
-			extractArrayTypes(decl.getType(), types);
-		} else if(type instanceof Type.Union) {
-			Type.Union t = (Type.Union) type;
-			for(int i=0;i!=t.size();++i) {
-				extractArrayTypes(t.get(i), types);
-			}
-		}
 	}
 
 	// ===========================================================================================
@@ -2139,6 +2095,7 @@ public class FlowTypeCheck {
 	private SemanticType.Record checkIsRecordType(SemanticType type, AccessMode mode, LifetimeRelation lifetimes,
 			SyntacticItem element) {
 		// FIXME: this prohibits effective array types
+		System.out.println("CHECKING: " + type + " => record");
 		SemanticType.Record t = type.asRecord(resolver);
 		if (t != null) {
 			return t;
@@ -2172,7 +2129,7 @@ public class FlowTypeCheck {
 		}
 	}
 
-	private Type.Record extractRecordType(Type type, Tuple<Identifier> fields, SyntacticItem element) {
+	private Type.Record extractWriteableRecordTypes(Type type, Tuple<Identifier> fields, SyntacticItem element) {
 		if(type == Type.Any) {
 			Type.Field[] variables = new Type.Field[fields.size()];
 			for (int i = 0; i != fields.size(); ++i) {
@@ -2215,7 +2172,7 @@ public class FlowTypeCheck {
 	private Type.Record[] extractRecordTypes(Type[] type, Tuple<Identifier> fields, SyntacticItem element) {
 		Type.Record[] types = new Type.Record[type.length];
 		for(int i=0;i!=types.length;++i) {
-			types[i] = extractRecordType(type[i],fields,element);
+			types[i] = extractWriteableRecordTypes(type[i],fields,element);
 		}
 		return ArrayUtils.removeAll(types, null);
 	}
@@ -2912,8 +2869,14 @@ public class FlowTypeCheck {
 				syntaxError(e.getMessage(), e.getName(), e);
 			}
 		}
-		// FIXME: broken!!
-		syntaxError(errorMessage(SUBTYPE_ERROR, lhs, rhs), element);
+		String str = "";
+		for(int i=0;i!=lhs.length;++i) {
+			if(i != 0) {
+				str += " or ";
+			}
+			str += lhs[i];
+		}
+		syntaxError(errorMessage(SUBTYPE_ERROR, str, rhs), element);
 	}
 
 	private void checkIsSubtype(SemanticType lhs, SemanticType rhs, LifetimeRelation lifetimes, SyntacticItem element) {

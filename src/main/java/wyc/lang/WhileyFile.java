@@ -4756,7 +4756,7 @@ public class WhileyFile extends AbstractCompilationUnit<WhileyFile> {
 			protected Reference(int opcode, SemanticType element) {
 				// NOTE: this is specifically to handle Type.Reference
 				super(opcode,element);
-				if(opcode != TYPE_reference) {
+				if(opcode != TYPE_reference && opcode != TYPE_staticreference) {
 					throw new IllegalArgumentException("invalid opcode");
 				}
 			}

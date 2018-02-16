@@ -427,13 +427,12 @@ public class SemanticTypeEmptinessTest implements EmptinessTest<SemanticType> {
 		case TYPE_record:
 			return SEMTYPE_record;
 		case TYPE_reference:
+		case TYPE_staticreference:
 			return SEMTYPE_reference;
 		case TYPE_union:
 			return SEMTYPE_union;
 		case TYPE_method:
 			return TYPE_function;
-		case TYPE_staticreference:
-			return TYPE_reference;
 		}
 		return opcode;
 	}
