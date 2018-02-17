@@ -55,27 +55,24 @@ import wycc.util.ArrayUtils;
  * @author David J. Pearce
  *
  */
-public class TypeFilter<T extends Type, U> implements Function<Type[],T[]> {
-	private final NameResolver resolver;
+public class AbstractTypeFilter<T extends Type> {
 	private final Class<T> kind;
 	private final T any;
 
-	public TypeFilter(NameResolver resolver, Class<T> kind, T any) {
-		this.resolver = resolver;
+	public AbstractTypeFilter(Class<T> kind, T any) {
 		this.kind = kind;
 		this.any = any;
 	}
 
-	@Override
-	public T[] apply(Type[] types) {
+	public T[] apply(Type[] types, NameResolver resolver) {
 		ArrayList<T> results = new ArrayList<>();
 		for (int i = 0; i != types.length; ++i) {
-			filter(types[i], results);
+			filter(types[i], results, resolver);
 		}
 		return ArrayUtils.toArray(kind, results);
 	}
 
-	public void filter(Type type, List<T> results) {
+	public void filter(Type type, List<T> results, NameResolver resolver) {
 		if (kind.isInstance(type)) {
 			results.add((T) type);
 		} else if(type instanceof Type.Any) {
@@ -84,7 +81,7 @@ public class TypeFilter<T extends Type, U> implements Function<Type[],T[]> {
 			Type.Nominal t = (Type.Nominal) type;
 			try {
 				Decl.Type decl = resolver.resolveExactly(t.getName(), Decl.Type.class);
-				filter(decl.getType(), results);
+				filter(decl.getType(), results, resolver);
 			} catch (ResolutionError e) {
 				syntaxError(errorMessage(ErrorMessages.RESOLUTION_ERROR, t.getName().toString()), t);
 				return;
@@ -92,7 +89,7 @@ public class TypeFilter<T extends Type, U> implements Function<Type[],T[]> {
 		} else if (type instanceof Type.Union) {
 			Type.Union t = (Type.Union) type;
 			for (int i = 0; i != t.size(); ++i) {
-				filter(t.get(i), results);
+				filter(t.get(i), results, resolver);
 			}
 		}
 	}

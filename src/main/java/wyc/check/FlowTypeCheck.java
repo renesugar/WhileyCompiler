@@ -41,9 +41,7 @@ import wyil.type.subtyping.EmptinessTest.LifetimeRelation;
 import wyil.type.subtyping.RelaxedTypeEmptinessTest;
 import wyil.type.subtyping.SemanticTypeEmptinessTest;
 import wyil.type.subtyping.SubtypeOperator;
-import wyil.type.util.TypeArrayExtractor;
-import wyil.type.util.TypeArrayFilter;
-import wyil.type.util.TypeFilter;
+import wyil.type.util.AbstractTypeFilter;
 import wyc.lang.WhileyFile;
 import wyc.lang.WhileyFile.Decl;
 import wyc.lang.WhileyFile.Type;
@@ -107,20 +105,15 @@ import static wyc.util.ErrorMessages.*;
  *
  */
 public class FlowTypeCheck {
-
 	private final CompileTask builder;
 	private final NameResolver resolver;
 	private final SubtypeOperator subtypeOperator;
-	private final Function<SemanticType,SemanticType.Array> arrayExtractor;
-	private final Function<Type[],Type.Array[]> arrayFilter;
 
 	public FlowTypeCheck(CompileTask builder) {
 		this.builder = builder;
 		this.resolver = builder.getNameResolver();
 		this.subtypeOperator = new SubtypeOperator(resolver,
 				new RelaxedTypeEmptinessTest(resolver));
-		this.arrayExtractor = new TypeArrayExtractor(resolver);
-		this.arrayFilter = new TypeFilter(resolver,Type.Array.class,new Type.Array(Type.Any));
 	}
 
 	// =========================================================================
@@ -1312,7 +1305,7 @@ public class FlowTypeCheck {
 		// SemanticType. Furthermore, since we know the result is an instanceof
 		// SemanticType.Array, it follows that it must be an instance of Type.Array (or
 		// null).
-		Type.Array arrT = (Type.Array) arrayExtractor.apply(srcT);
+		Type.Array arrT = (Type.Array) FlowTypeUtils.typeArrayExtractor(srcT, environment, subtypeOperator, resolver);
 		if(arrT == null) {
 			return syntaxError("expected array type", lval);
 		} else {
@@ -1324,20 +1317,23 @@ public class FlowTypeCheck {
 
 	public Type checkRecordLVal(Expr.RecordAccess lval, Environment environment) {
 		Type src = checkLVal((LVal) lval.getOperand(), environment);
-		Type.Record recT = extractWriteableRecordType(src, lval);
-		Type type = recT.getField(lval.getField());
-		//
-		if (type == null) {
-			return syntaxError("invalid field access", lval.getField());
+		Type.Record recT = (Type.Record) FlowTypeUtils.typeRecordExtractor(src, environment, subtypeOperator, resolver);
+		if (recT == null) {
+			return syntaxError("expected record type", lval);
 		} else {
-			return type;
+			return recT.getField(lval.getField());
 		}
 	}
 
 	public Type checkDereferenceLVal(Expr.Dereference lval, Environment environment) {
 		Type srcT = checkLVal((LVal) lval.getOperand(), environment);
-		Type.Reference refT = extractReferenceType(srcT, lval);
-		return refT.getElement();
+		Type.Reference refT = (Type.Reference) FlowTypeUtils.typeReferenceExtractor(srcT, environment, subtypeOperator,
+				resolver);
+		if(refT == null) {
+			return syntaxError("expected reference type", lval);
+		} else {
+			return refT.getElement();
+		}
 	}
 
 	// =========================================================================
@@ -1798,39 +1794,30 @@ public class FlowTypeCheck {
 	}
 
 	private SemanticType checkRecordAccess(Expr.RecordAccess expr, Environment env, Type... expected) {
-		// FIXME: this clearly does not make sense.
-		Type.Record[] expectedRecords = getExpectedRecordTypes(expr.getField(),expected);
+		// Determine set of expected record types as best possible
+		Type.Record[] expectedRecords = FlowTypeUtils.typeRecordConstructor(expr.getField(),expected);
+		// Check expression against expected record types
 		SemanticType src = checkExpression(expr.getOperand(), env, expectedRecords);
-		SemanticType.Record readableRecordT = checkIsRecordType(src, AccessMode.READING, env, expr.getOperand());
-		//
-		SemanticType type = readableRecordT.getField(expr.getField());
-		if (type == null) {
-			return syntaxError("invalid field access", expr.getField());
-		} else {
-			return type;
-		}
-	}
-
-	private Type.Record[] getExpectedRecordTypes(Identifier field, Type... expected) {
-		Type.Record[] result = new Type.Record[expected.length];
-		for(int i=0;i!=expected.length;++i) {
-			Tuple<Type.Field> fields = new Tuple<>(new Type.Field(field, expected[i]));
-			result[i] = new Type.Record(true, fields);
-		}
-		return result;
+		// NOTE: following safe because expression check ensures src has field
+		return FlowTypeUtils.typeRecordExtractor(src, env, subtypeOperator, resolver).getField(expr.getField());
 	}
 
 	private SemanticType checkRecordUpdate(Expr.RecordUpdate expr, Environment environment, Type... expected) {
-		Type.Record[] recTypes = extractRecordTypes(expected, expr);
+		// Filter out all non-record types as these are bogus.
+		Type.Record[] expectedRecordTypes = FlowTypeUtils.typeRecordFilter(expected, resolver);
+		// Sanity check there is something left
+		if(expectedRecordTypes.length == 0) {
+			return syntaxError("expected record type", expr);
+		}
+		// Construct expected field types
+		Type[] expectedFieldTypes = FlowTypeUtils.typeRecordFieldConstructor(expectedRecordTypes,expr.getField());
+		// Check src and value expressions
 		SemanticType src = checkExpression(expr.getFirstOperand(), environment, expected);
-		// FIXME: problem here if field does not exit
-		SemanticType val = checkExpression(expr.getSecondOperand(), environment,
-				getFieldTypes(recTypes, expr.getField()));
-		SemanticType.Record readableRecordT = checkIsRecordType(src, AccessMode.READING, environment,
-				expr.getFirstOperand());
+		SemanticType val = checkExpression(expr.getSecondOperand(), environment, expectedFieldTypes);
+		SemanticType.Record readableRecordT = FlowTypeUtils.typeRecordExtractor(src, environment, subtypeOperator, resolver);
 		//
 		String actualFieldName = expr.getField().get();
-		Tuple<SemanticType.Field> fields = readableRecordT.getFields();
+		Tuple<? extends SemanticType.Field> fields = readableRecordT.getFields();
 		for (int i = 0; i != fields.size(); ++i) {
 			SemanticType.Field vd = fields.get(i);
 			String declaredFieldName = vd.getName().get();
@@ -1844,27 +1831,23 @@ public class FlowTypeCheck {
 		return syntaxError("invalid field update", expr.getField());
 	}
 
-	public Type[] getFieldTypes(Type.Record[] types, Identifier fieldName) {
-		Type[] fields = new Type[types.length];
-		for(int i=0;i!=fields.length;++i) {
-			fields[i] = types[i].getField(fieldName);
-		}
-		fields = ArrayUtils.removeAll(fields, null);
-		if(fields.length == 0) {
-			return null;
-		} else {
-			return fields;
-		}
-	}
-
 	private SemanticType checkRecordInitialiser(Expr.RecordInitialiser expr, Environment environment, Type... expected) {
-		Type.Record[] records = extractRecordTypes(expected, expr.getFields(), expr);
 		Tuple<Identifier> fields = expr.getFields();
 		Tuple<Expr> operands = expr.getOperands();
+		// Filter out all non-record expected types as these are bogus.
+		Type.Record[] records = FlowTypeUtils.typeRecordFilter(expected, resolver);
+		// Filter out all expected record types which don't match
+		records = FlowTypeUtils.typeRecordFieldFilter(records, fields);
+		// Sanity check there is something left
+		if(records.length == 0) {
+			return syntaxError("expected record type", expr);
+		}
+		//
 		SemanticType.Field[] decls = new SemanticType.Field[operands.size()];
+		// Check field initialiser expressions one by one
 		for (int i = 0; i != operands.size(); ++i) {
 			Identifier field = fields.get(i);
-			Type[] expectedFieldType = getFieldTypes(records,field);
+			Type[] expectedFieldType = FlowTypeUtils.typeRecordFieldConstructor(records,field);
 			if(expectedFieldType == null) {
 				syntaxError("field not used", field);
 			}
@@ -1883,11 +1866,19 @@ public class FlowTypeCheck {
 	}
 
 	private SemanticType checkArrayInitialiser(Expr.ArrayInitialiser expr, Environment environment, Type... expected) {
-		Type.Array[] expectedArrays = arrayFilter.apply(expected);
+		// Filter out all non-array expected types as these are bogus.
+		Type.Array[] expectedArrayTypes = FlowTypeUtils.typeArrayFilter(expected, resolver);
+		// Sanity check there is something left
+		if(expectedArrayTypes.length == 0) {
+			return syntaxError("expected array type", expr);
+		}
+		// Construct expected element types
+		Type[] expectedElementTypes = FlowTypeUtils.typeArrayElementConstructor(expectedArrayTypes);
+		// Check initialiser expressions
 		Tuple<Expr> operands = expr.getOperands();
 		SemanticType[] ts = new SemanticType[operands.size()];
 		for (int i = 0; i != ts.length; ++i) {
-			ts[i] = checkExpression(operands.get(i), environment, getElementTypes(expectedArrays));
+			ts[i] = checkExpression(operands.get(i), environment, expectedElementTypes);
 		}
 		ts = ArrayUtils.removeDuplicates(ts);
 		SemanticType element;
@@ -1910,79 +1901,77 @@ public class FlowTypeCheck {
 	}
 
 	private SemanticType checkArrayGenerator(Expr.ArrayGenerator expr, Environment environment, Type... expected) {
-		Type.Array[] expectedArrays = arrayFilter.apply(expected);
+		// Filter out all non-array expected types as these are bogus.
+		Type.Array[] expectedArrayTypes = FlowTypeUtils.typeArrayFilter(expected, resolver);
+		// Sanity check there is something left
+		if(expectedArrayTypes.length == 0) {
+			return syntaxError("expected array type", expr);
+		}
+		// Construct expected element types
+		Type[] expectedElementTypes = FlowTypeUtils.typeArrayElementConstructor(expectedArrayTypes);
+		// Check generation operands
 		Expr value = expr.getFirstOperand();
 		Expr length = expr.getSecondOperand();
 		//
-		SemanticType valueT = checkExpression(value, environment, getElementTypes(expectedArrays));
+		SemanticType valueT = checkExpression(value, environment, expectedElementTypes);
 		checkExpression(length, environment, Type.Int);
 		//
 		return new SemanticType.Array(valueT);
 	}
 
 	private SemanticType checkArrayAccess(Expr.ArrayAccess expr, Environment environment, Type... expected) {
-		Type.Array[] expectedArrays = toArrayTypes(expected);
+		Type.Array[] expectedArrays = FlowTypeUtils.typeArrayConstructor(expected);
 		Expr source = expr.getFirstOperand();
 		Expr subscript = expr.getSecondOperand();
 		//
 		SemanticType sourceT = checkExpression(source, environment, expectedArrays);
 		SemanticType subscriptT = checkExpression(subscript, environment, Type.Int);
 		//
-		return arrayExtractor.apply(sourceT).getElement();
-	}
-
-	private Type.Array[] toArrayTypes(Type[] types) {
-		Type.Array[] arrayTypes = new Type.Array[types.length];
-		for(int i=0;i!=types.length;++i) {
-			arrayTypes[i] = new Type.Array(types[i]);
-		}
-		return arrayTypes;
+		return FlowTypeUtils.typeArrayExtractor(sourceT, environment, subtypeOperator, resolver).getElement();
 	}
 
 	private SemanticType checkArrayUpdate(Expr.ArrayUpdate expr, Environment environment, Type... expected) {
 		Expr source = expr.getFirstOperand();
 		Expr subscript = expr.getSecondOperand();
 		Expr value = expr.getThirdOperand();
-		//
-		Type.Array[] expectedArrays = arrayFilter.apply(expected);
-		// FIXME: should check expectedArrays here!
-		if(expectedArrays.length == 0) {
-			return syntaxError("expected array type", source);
+		// Filter out all non-array expected types as these are bogus.
+		Type.Array[] expectedArrayTypes = FlowTypeUtils.typeArrayFilter(expected, resolver);
+		// Sanity check there is something left
+		if(expectedArrayTypes.length == 0) {
+			return syntaxError("expected array type", expr);
 		}
-		//
+		// Construct expected element types
+		Type[] expectedElementTypes = FlowTypeUtils.typeArrayElementConstructor(expectedArrayTypes);
+		// Check operand expressions
 		SemanticType sourceT = checkExpression(source, environment, expected);
-		SemanticType subscriptT = checkExpression(subscript, environment, Type.Int);
-		SemanticType valueT = checkExpression(value, environment, getElementTypes(expectedArrays));
-		//
-		SemanticType.Array sourceArrayT = arrayExtractor.apply(sourceT);
-		if (sourceArrayT == null) {
-			// FIXME: is this check actually required? I don't think so because it will be
-			// covered by checkExpression above.
-			return syntaxError("expected array type", source);
-		}
-		checkIsSubtype(Type.Int, subscriptT, environment, subscript);
-		checkIsSubtype(sourceArrayT.getElement(), valueT, environment, value);
-		return sourceArrayT;
+		checkExpression(subscript, environment, Type.Int);
+		checkExpression(value, environment, expectedElementTypes);
+		// Extract the determined array type
+		return FlowTypeUtils.typeArrayExtractor(sourceT, environment, subtypeOperator, resolver);
 	}
 
 	private SemanticType checkDereference(Expr.Dereference expr, Environment environment, Type... expected) {
-		SemanticType operandT = checkExpression(expr.getOperand(), environment, toReferenceTypes(expected));
-		SemanticType.Reference readableReferenceT = checkIsReferenceType(operandT, AccessMode.READING, environment, expr.getOperand());
+		// Construct the array of expected reference types
+		Type.Reference[] expectedReferenceTypes = FlowTypeUtils.typeReferenceConstructor(expected);
+		// Check the expression against the expected reference types
+		SemanticType operandT = checkExpression(expr.getOperand(), environment, expectedReferenceTypes);
+		// Extract an appropriate reference type form the source.
+		SemanticType.Reference readableReferenceT = FlowTypeUtils.typeReferenceExtractor(operandT, environment,
+				subtypeOperator, resolver);
 		//
 		return readableReferenceT.getElement();
 	}
 
-	private Type.Reference[] toReferenceTypes(Type[] types) {
-		Type.Reference[] refTypes = new Type.Reference[types.length];
-		for(int i=0;i!=types.length;++i) {
-			refTypes[i] = new Type.Reference(types[i]);
-		}
-		return refTypes;
-	}
-
 	private SemanticType checkNew(Expr.New expr, Environment environment, Type... expected) {
-		Type.Reference[] expectedReferences = extractReferenceTypes(expected, expr);
-		SemanticType operandT = checkExpression(expr.getOperand(), environment, getElementTypes(expectedReferences));
+		Type.Reference[] expectedReferences = FlowTypeUtils.typeReferenceFilter(expected, resolver);
+		// Sanity check there is something left
+		if (expectedReferences.length == 0) {
+			return syntaxError("expected reference type", expr);
+		}
+		// Determine set of expected element types
+		Type[] expectedElementTypes = FlowTypeUtils.typeReferenceElementConstructor(expectedReferences);
+		// Check expression type against expected element types
+		SemanticType operandT = checkExpression(expr.getOperand(), environment, expectedElementTypes);
 		//
 		if (expr.hasLifetime()) {
 			return new SemanticType.Reference(operandT, expr.getLifetime());
@@ -2066,219 +2055,9 @@ public class FlowTypeCheck {
 		return result;
 	}
 
-	/**
-	 * The access mode is used to determine whether we are extracting a type in a
-	 * read or write position.
-	 *
-	 * @author David J. Peare
-	 *
-	 */
-	private enum AccessMode {
-		READING, WRITING
-	}
-
-	// ===========================================================================================
-	// Array Helpers
-	// ===========================================================================================
-
-	public Type[] getElementTypes(Type.Array[] types) {
-		Type[] elements = new Type[types.length];
-		for(int i=0;i!=types.length;++i) {
-			elements[i] = types[i].getElement();
-		}
-		return elements;
-	}
-
-	// ===========================================================================================
-	// Record Helpers
-	// ===========================================================================================
-
-	/**
-	 * Check whether a given type is a record type of some sort.
-	 *
-	 * @param type
-	 * @return
-	 */
-	private SemanticType.Record checkIsRecordType(SemanticType type, AccessMode mode, LifetimeRelation lifetimes,
-			SyntacticItem element) {
-		// FIXME: this prohibits effective array types
-		SemanticType.Record t = type.asRecord(resolver);
-		if (t != null) {
-			return t;
-		} else {
-			return syntaxError("expected record type", element);
-		}
-	}
-
-	public Type[] getElementTypes(Type.Reference[] types) {
-		Type[] elements = new Type[types.length];
-		for(int i=0;i!=types.length;++i) {
-			elements[i] = types[i].getElement();
-		}
-		return elements;
-	}
-
-	private Type.Record extractWriteableRecordType(Type type, SyntacticItem element) {
-		try {
-			// FIXME: can this use Type.asRecord instead?
-			ArrayList<Type.Record> records = new ArrayList<>();
-			extractWriteableRecordTypes(type, records);
-			if(records.size() == 0) {
-				return syntaxError("expected record type", element);
-			} else if(records.size() > 1) {
-				return syntaxError("ambiguous record type", element);
-			} else {
-				return records.get(0);
-			}
-		} catch(ResolutionError e) {
-			return syntaxError(e.getMessage(), element);
-		}
-	}
-
-	private Type.Record extractWriteableRecordTypes(Type type, Tuple<Identifier> fields, SyntacticItem element) {
-		if(type == Type.Any) {
-			Type.Field[] variables = new Type.Field[fields.size()];
-			for (int i = 0; i != fields.size(); ++i) {
-				variables[i] = new Type.Field(fields.get(i), Type.Any);
-			}
-			return new Type.Record(false, new Tuple<>(variables));
-		} else {
-			try {
-				// FIXME: can this use Type.asRecord instead?
-				ArrayList<Type.Record> records = new ArrayList<>();
-				extractRecordTypes(type, fields, records);
-				if(records.size() == 0) {
-					return syntaxError("expected record type", element);
-				} else if(records.size() > 1) {
-					return syntaxError("ambiguous record type", element);
-				} else {
-					return records.get(0);
-				}
-			} catch(ResolutionError e) {
-				return syntaxError(e.getMessage(), element);
-			}
-		}
-	}
-
-	private void extractWriteableRecordTypes(Type type, List<Type.Record> types) throws ResolutionError {
-		if(type instanceof Type.Record) {
-			types.add((Type.Record)type);
-		} else if(type instanceof Type.Nominal) {
-			Type.Nominal t = (Type.Nominal) type;
-			Decl.Type decl = resolver.resolveExactly(t.getName(), Decl.Type.class);
-			extractWriteableRecordTypes(decl.getType(), types);
-		} else if(type instanceof Type.Union) {
-			Type.Union t = (Type.Union) type;
-			for(int i=0;i!=t.size();++i) {
-				extractWriteableRecordTypes(t.get(i), types);
-			}
-		}
-	}
-
-	private Type.Record[] extractRecordTypes(Type[] type, Tuple<Identifier> fields, SyntacticItem element) {
-		Type.Record[] types = new Type.Record[type.length];
-		for(int i=0;i!=types.length;++i) {
-			types[i] = extractWriteableRecordTypes(type[i],fields,element);
-		}
-		return ArrayUtils.removeAll(types, null);
-	}
-
-	private void extractRecordTypes(Type type, Tuple<Identifier> fields, List<Type.Record> types) throws ResolutionError {
-		if(type instanceof Type.Record) {
-			Type.Record t = (Type.Record) type;
-			Tuple<Type.Field> t_fields = t.getFields();
-			// Check this record looks like a real candidate.
-			if (t_fields.size() == fields.size() || (t_fields.size() <= fields.size() && t.isOpen())) {
-				int matches = 0;
-				for (int i = 0; i != t_fields.size(); ++i) {
-					Identifier t_field = t_fields.get(i).getName();
-					for(int j=0;j!=fields.size();++j) {
-						if(fields.get(j).equals(t_field)) {
-							matches++;
-						}
-					}
-				}
-				// Finally, check that every t_field was matched. If not, then there is a field
-				// in the expected type which is not present in the actual type and, therefore,
-				// this expected type can be discounted. Observe that we don't need to do any
-				// more checks, since we already know either: matches == fields.size() or
-				// t.isOpen() && matches <= fields.size()
-				if(matches == t_fields.size()) {
-					types.add((Type.Record) type);
-				}
-			}
-		} else if(type instanceof Type.Nominal) {
-			Type.Nominal t = (Type.Nominal) type;
-			Decl.Type decl = resolver.resolveExactly(t.getName(), Decl.Type.class);
-			extractRecordTypes(decl.getType(), fields, types);
-		} else if(type instanceof Type.Union) {
-			Type.Union t = (Type.Union) type;
-			for(int i=0;i!=t.size();++i) {
-				extractRecordTypes(t.get(i), fields, types);
-			}
-		}
-	}
-
 	// ===========================================================================================
 	// Reference Helpers
 	// ===========================================================================================
-
-	/**
-	 * Check whether a given type is a reference type of some sort.
-	 *
-	 * @param type
-	 * @return
-	 * @throws ResolutionError
-	 */
-	private SemanticType.Reference checkIsReferenceType(SemanticType type, AccessMode mode, LifetimeRelation lifetimes,
-			SyntacticItem element) {
-		SemanticType.Reference t = type.asReference(resolver);
-		if (t != null) {
-			return t;
-		} else {
-			return syntaxError("expected reference type", element);
-		}
-	}
-
-	private Type.Reference[] extractReferenceTypes(Type[] type, SyntacticItem element) {
-		Type.Reference[] types = new Type.Reference[type.length];
-		for(int i=0;i!=types.length;++i) {
-			types[i] = extractReferenceType(type[i],element);
-		}
-		return ArrayUtils.removeAll(types, null);
-	}
-
-	private Type.Reference extractReferenceType(Type type, SyntacticItem element) {
-		try {
-			// FIXME: can this use Type.asReference instead?
-			ArrayList<Type.Reference> references = new ArrayList<>();
-			extractReferenceTypes(type, references);
-			if(references.size() == 0) {
-				return syntaxError("expected reference type", element);
-			} else if(references.size() > 1) {
-				return syntaxError("ambiguous reference type", element);
-			} else {
-				return references.get(0);
-			}
-		} catch(ResolutionError e) {
-			return syntaxError(e.getMessage(), element);
-		}
-	}
-
-	private void extractReferenceTypes(Type type, List<Type.Reference> types) throws ResolutionError {
-		if(type instanceof Type.Reference) {
-			types.add((Type.Reference) type);
-		} else if(type instanceof Type.Nominal) {
-			Type.Nominal t = (Type.Nominal) type;
-			Decl.Type decl = resolver.resolveExactly(t.getName(), Decl.Type.class);
-			extractReferenceTypes(decl.getType(), types);
-		} else if(type instanceof Type.Union) {
-			Type.Union t = (Type.Union) type;
-			for(int i=0;i!=t.size();++i) {
-				extractReferenceTypes(t.get(i), types);
-			}
-		}
-	}
 
 	/**
 	 * Check whether a given type is a callable type of some sort.
