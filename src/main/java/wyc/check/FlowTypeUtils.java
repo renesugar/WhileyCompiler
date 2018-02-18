@@ -22,9 +22,7 @@ import wyc.lang.WhileyFile.Type;
 import wyil.type.subtyping.EmptinessTest;
 import wyil.type.subtyping.EmptinessTest.LifetimeRelation;
 import wyil.type.subtyping.SubtypeOperator;
-import wyil.type.util.AbstractTypeExtractor;
-import wyil.type.util.AbstractTypeFilter;
-import wyil.type.util.TypeRecordExtractor;
+import wyil.type.util.*;
 
 /**
  * This is an overflow class for <code>FlowTypeCheck</code>. It provides various
