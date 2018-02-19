@@ -230,9 +230,7 @@ public abstract class AbstractTypeExtractor<T extends SemanticType> {
 				T tmp = construct(conjunct);
 				if (tmp == null) {
 					// This indicates one of the conjuncts did not generate a proper
-					// extraction. At which point, there is no possible extraction
-					// and we can terminate early.
-					return null;
+					// extraction.  In this case, we can simply ignore it.
 				} else if (result == null) {
 					result = tmp;
 				} else {
