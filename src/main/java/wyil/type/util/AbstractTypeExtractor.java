@@ -127,7 +127,9 @@ public abstract class AbstractTypeExtractor<T extends SemanticType> {
 		case SEMTYPE_record:
 			return toDisjunctiveNormalForm((SemanticType.Record) type);
 		case TYPE_reference:
+		case TYPE_staticreference:
 		case SEMTYPE_reference:
+		case SEMTYPE_staticreference:
 			return toDisjunctiveNormalForm((SemanticType.Reference) type);
 		case TYPE_nominal:
 			return toDisjunctiveNormalForm((Type.Nominal) type);
@@ -144,7 +146,7 @@ public abstract class AbstractTypeExtractor<T extends SemanticType> {
 	}
 
 	protected Disjunct toDisjunctiveNormalForm(Type.Primitive type) {
-		return new Disjunct((Type.Atom) type);
+		return new Disjunct(type);
 	}
 
 	protected Disjunct toDisjunctiveNormalForm(Type.Callable type) {
@@ -429,6 +431,7 @@ public abstract class AbstractTypeExtractor<T extends SemanticType> {
 	// ===============================================================
 	// Misc
 	// ===============================================================
+
 	/**
 	 * Provides a simplistic form of type union which, in some cases, does
 	 * slightly better than simply creating a new union. For example, unioning
@@ -439,15 +442,18 @@ public abstract class AbstractTypeExtractor<T extends SemanticType> {
 	 * @param rhs
 	 * @return
 	 */
-	protected SemanticType unionHelper(SemanticType lhs, SemanticType rhs) {
+	@SuppressWarnings("unchecked")
+	protected <T extends SemanticType> T unionHelper(T lhs, T rhs) {
 		if(lhs.equals(rhs)) {
 			return lhs;
 		} else if(lhs instanceof Type.Void) {
 			return rhs;
 		} else if(rhs instanceof Type.Void) {
 			return lhs;
+		} else if(lhs instanceof Type && rhs instanceof Type) {
+			return (T) new Type.Union(new Type[]{(Type)lhs,(Type)rhs});
 		} else {
-			return new SemanticType.Union(new SemanticType[]{lhs,rhs});
+			return (T) new SemanticType.Union(new SemanticType[]{lhs,rhs});
 		}
 	}
 

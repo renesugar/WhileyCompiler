@@ -80,7 +80,13 @@ public class TypeRecordExtractor extends AbstractTypeExtractor<SemanticType.Reco
 		boolean isOpenRecord = lhs.isOpen() || rhs.isOpen();
 		isOpenRecord |= (lhsFields.size() > fields.size() || rhsFields.size() > fields.size());
 		//
-		return new SemanticType.Record(isOpenRecord, new Tuple<>(fields));
+		if(lhs instanceof Type && rhs instanceof Type) {
+			// NOTE: this case is required to ensure that, when given two Types, the type
+			// extractor produces a Type (rather than a SemanticType).
+			return new SemanticType.Record(isOpenRecord, new Tuple(fields));
+		} else {
+			return new SemanticType.Record(isOpenRecord, new Tuple<>(fields));
+		}
 	}
 
 	@Override

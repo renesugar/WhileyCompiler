@@ -133,7 +133,16 @@ public class FlowTypeUtils {
 	public static Type[] typeRecordFieldConstructor(Type.Record[] types, Identifier fieldName) {
 		Type[] fields = new Type[types.length];
 		for(int i=0;i!=fields.length;++i) {
-			fields[i] = types[i].getField(fieldName);
+			Type.Record type = types[i];
+			Type field = type.getField(fieldName);
+			if(field == null) {
+				if(type.isOpen()) {
+					field = Type.Any;
+				} else {
+					return null;
+				}
+			}
+			fields[i] = field;
 		}
 		fields = ArrayUtils.removeAll(fields, null);
 		if(fields.length == 0) {
@@ -276,17 +285,19 @@ public class FlowTypeUtils {
 		Type.Record[] result = new Type.Record[types.length];
 		for(int i=0;i!=result.length;++i) {
 			Type.Record ith = types[i];
-			Tuple<Type.Field> ith_fields = ith.getFields();
-			if(compareFields(ith_fields,fields)) {
+			if(compareFields(ith,fields)) {
 				result[i] = ith;
 			}
 		}
 		return ArrayUtils.removeAll(result, null);
 	}
 
-	private static boolean compareFields(Tuple<Type.Field> ith_fields, Tuple<Identifier> fields) {
-		if (ith_fields.size() != fields.size()) {
-			// FIXME: what about open records?
+	private static boolean compareFields(Type.Record ith, Tuple<Identifier> fields) {
+		Tuple<Type.Field> ith_fields = ith.getFields();
+		//
+		if (ith_fields.size() > fields.size()) {
+			return false;
+		} else if (ith_fields.size() < fields.size() && !ith.isOpen()) {
 			return false;
 		} else {
 			for (int i = 0; i != ith_fields.size(); ++i) {
@@ -346,6 +357,25 @@ public class FlowTypeUtils {
 	// Type Extractors
 	// ===============================================================================================================
 
+	/**
+	 * <p>
+	 * Responsible for extracting a readable array type. This is a conservative
+	 * approximation of that described in a given type which is safe to use when
+	 * reading elements from that type. For example, the type
+	 * <code>(int[])|(bool[])</code> has a readable array type of
+	 * <code>(int|bool)[]</code>. This is the readable type as, if we were to read
+	 * an element from either bound, the return type would be in
+	 * <code>int|bool</code>. However, we cannot use the readable array type for
+	 * writing as this could be unsafe. For example, if we actually had an array of
+	 * type <code>int[]</code>, then writing a boolean value is not permitted. Not
+	 * all types have readable array type and, furthermore, care must be exercised
+	 * for those that do. For example, <code>(int[])|int</code> does not have a
+	 * readable array type. Finally, negations play an important role in determining
+	 * the readable array type. For example, <code>(int|null)[] & !(int[])</code>
+	 * generates the readable array type <code>null[]</code>.
+	 * </p>
+	 *
+	 */
 	public static SemanticType.Array typeArrayExtractor(SemanticType type, LifetimeRelation lifetimes,
 			SubtypeOperator subtypeOperator, NameResolver resolver) {
 		return new TypeArrayExtractor(resolver, subtypeOperator).apply(type, lifetimes);
@@ -376,6 +406,22 @@ public class FlowTypeUtils {
 		return new TypeRecordExtractor(resolver, subtypeOperator).apply(type, lifetimes);
 	}
 
+	/**
+	 * <p>
+	 * Responsible for extracting a readable reference type. This is a conservative
+	 * approximation of that described in a given type which is safe to use when
+	 * reading elements from that type. For example, the type
+	 * <code>(&int)|(&bool)</code> has a readable reference type of
+	 * <code>&(int|bool)</code>. This is the readable type as, if we were to read an
+	 * element from either bound, the return type would be in <code>int|bool</code>.
+	 * However, we cannot use the readable reference type for writing as this could
+	 * be unsafe. For example, if we actually had an reference of type
+	 * <code>&int</code>, then writing a boolean value is not permitted. Not all
+	 * types have a readable reference type and, furthermore, care must be exercised
+	 * for those that do. For example, <code>(&int)|int</code> does not have a
+	 * readable reference type.
+	 * </p>
+	 */
 	public static SemanticType.Reference typeReferenceExtractor(SemanticType type, LifetimeRelation lifetimes,
 			SubtypeOperator subtypeOperator, NameResolver resolver) {
 		return new TypeReferenceExtractor(resolver, subtypeOperator).apply(type, lifetimes);
