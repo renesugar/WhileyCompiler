@@ -1951,13 +1951,25 @@ public class FlowTypeCheck {
 	}
 
 	private SemanticType checkDereference(Expr.Dereference expr, Environment environment, Type... expected) {
-		// Construct the array of expected reference types
-		Type.Reference[] expectedReferenceTypes = FlowTypeUtils.typeReferenceConstructor(expected);
-		// Check the expression against the expected reference types
-		SemanticType operandT = checkExpression(expr.getOperand(), environment, expectedReferenceTypes);
+		// For references, we do not further propagate the set of expected types. This
+		// may seem strange but it makes logical sense. Consider this scenario:
+		//
+		// method f(&i8 ptr) -> (i16 r):
+		// return *ptr
+		//
+		// Where do we want the coercion from i18=>i16 to occur? We cannot coerce the
+		// referent of ptr as this does not make any logical sense (i.e. because its
+		// representation is invariant). Therefore, we must coerce after the dereference
+		// and this is the effect that ignoring expected types at this point has.
+		SemanticType operandT = checkExpression(expr.getOperand(), environment, Type.Any);
 		// Extract an appropriate reference type form the source.
 		SemanticType.Reference readableReferenceT = FlowTypeUtils.typeReferenceExtractor(operandT, environment,
 				subtypeOperator, resolver);
+		// Since we ignored the expected types before, we must now check that we were
+		// able to successfully extract a reference type.
+		if(readableReferenceT == null) {
+			return syntaxError("expected reference type", expr);
+		}
 		//
 		return readableReferenceT.getElement();
 	}

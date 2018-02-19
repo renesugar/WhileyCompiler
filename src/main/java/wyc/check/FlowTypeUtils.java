@@ -153,31 +153,6 @@ public class FlowTypeUtils {
 	}
 
 	/**
-	 * Given an array of expected element types, construct corresponding expected
-	 * reference types. For example, consider the following simple Whiley snippet:
-	 *
-	 * <pre>
-	 * method f(&int ptr):
-	 *    int x = *ptr
-	 * </pre>
-	 *
-	 * The expected type for the expression <code>*ptr</code> is <code>int</code>.
-	 * From this, we calculate the expected type for the expression <code>ptr</code>
-	 * as <code>&int</code>.
-	 *
-	 * @param field
-	 * @param expected
-	 * @return
-	 */
-	public static Type.Reference[] typeReferenceConstructor(Type[] types) {
-		Type.Reference[] refTypes = new Type.Reference[types.length];
-		for (int i = 0; i != types.length; ++i) {
-			refTypes[i] = new Type.Reference(types[i]);
-		}
-		return refTypes;
-	}
-
-	/**
 	 * Given an array of expected reference types, construct corresponding expected
 	 * element types. For example, consider the following simple Whiley snippet:
 	 *
