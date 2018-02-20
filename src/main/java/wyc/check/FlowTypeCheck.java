@@ -2030,56 +2030,39 @@ public class FlowTypeCheck {
 
 	private SemanticType checkLambdaDeclaration(Decl.Lambda expr, Environment env, Type... expected) {
 		Tuple<Decl.Variable> parameters = expr.getParameters();
-		checkNonEmpty(parameters, env);
 		Tuple<Type> parameterTypes = parameters.project(2, Type.class);
-		SemanticType result = checkExpression(expr.getBody(), env);
+		// Filter out all non-record types as these are bogus.
+		Type.Callable[] expectedCallableTypes = FlowTypeUtils.typeLambdaFilter(expected, parameterTypes, resolver);
+		// Sanity check there is something left
+		if(expectedCallableTypes.length == 0) {
+			return syntaxError("expected function or method type", expr);
+		}
+		// Project out all return values from expected callable types
+		Type[] expectedReturnTypes = FlowTypeUtils.typeLambdaReturnConstructor(expectedCallableTypes);
+		// Sanity check no parameter is "empty", that is equivalent to void.
+		checkNonEmpty(parameters, env);
+		// Type check the body of the lambda using the expected return types
+		SemanticType result = checkExpression(expr.getBody(), env, expectedReturnTypes);
 		// Determine whether or not this is a pure or impure lambda.
 		Type.Callable signature;
-		if (isPure(expr.getBody())) {
+		if(!(result instanceof Type)) {
+			// NOTE: this case is difficult, but not impossible, to reach. Specifically,
+			// since the body is an expression, flow typing would appear not to be in play.
+			// However, it's possible that a variable from the enclosing scope has been
+			// refined, leading to a potential problem.
+			return syntaxError("cannot determine concrete return type",expr);
+		} else if (FlowTypeUtils.isPure(expr.getBody())) {
 			// This is a pure lambda, hence it has function type.
-			signature = new Type.Function(parameterTypes, new Tuple<>(result));
+			signature = new Type.Function(parameterTypes, new Tuple<>((Type) result));
 		} else {
 			// This is an impure lambda, hence it has method type.
-			signature = new Type.Method(parameterTypes, new Tuple<>(result), expr.getCapturedLifetimes(), expr.getLifetimes());
+			signature = new Type.Method(parameterTypes, new Tuple<>((Type) result), expr.getCapturedLifetimes(),
+					expr.getLifetimes());
 		}
-		// Update with inferred signature
+		// Update lambda declaration with inferred signature.
 		expr.setType(expr.getHeap().allocate(signature));
 		// Done
 		return signature;
-	}
-
-	/**
-	 * Determine whether a given expression calls an impure method, dereferences a
-	 * reference or accesses a static variable. This is done by exploiting the
-	 * uniform nature of syntactic items. Essentially, we just traverse the entire
-	 * tree representing the syntactic item looking for expressions of any kind.
-	 *
-	 * @param item
-	 * @return
-	 */
-	private boolean isPure(SyntacticItem item) {
-		// Examine expression to determine whether this expression is impure.
-		if (item instanceof Expr.StaticVariableAccess || item instanceof Expr.Dereference || item instanceof Expr.New) {
-			return false;
-		} else if (item instanceof Expr.Invoke) {
-			Expr.Invoke e = (Expr.Invoke) item;
-			if (e.getSignature() instanceof Decl.Method) {
-				// This expression is definitely not pure
-				return false;
-			}
-		} else if (item instanceof Expr.IndirectInvoke) {
-			Expr.IndirectInvoke e = (Expr.IndirectInvoke) item;
-			// FIXME: need to do something here.
-			internalFailure("purity checking currently does not support indirect invocation",item);
-		}
-		// Recursively examine any subexpressions. The uniform nature of
-		// syntactic items makes this relatively easy.
-		boolean result = true;
-		//
-		for (int i = 0; i != item.size(); ++i) {
-			result &= isPure(item.get(i));
-		}
-		return result;
 	}
 
 	// ===========================================================================================
