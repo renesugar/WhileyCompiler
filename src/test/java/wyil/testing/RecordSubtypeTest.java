@@ -21,7 +21,7 @@ import wyc.lang.WhileyFile.Type;
 import wyc.util.TestUtils;
 import wyil.type.subtyping.SubtypeOperator;
 import wyil.type.subtyping.RelaxedTypeEmptinessTest;
-import wyil.type.subtyping.SemanticTypeEmptinessTest;
+import wyil.type.subtyping.StrictTypeEmptinessTest;
 
 import static org.junit.Assert.*;
 import static wyc.lang.WhileyFile.Type;

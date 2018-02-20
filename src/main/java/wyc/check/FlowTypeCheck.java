@@ -39,7 +39,7 @@ import wyfs.lang.Path;
 import wyfs.util.Trie;
 import wyil.type.subtyping.EmptinessTest.LifetimeRelation;
 import wyil.type.subtyping.RelaxedTypeEmptinessTest;
-import wyil.type.subtyping.SemanticTypeEmptinessTest;
+import wyil.type.subtyping.StrictTypeEmptinessTest;
 import wyil.type.subtyping.SubtypeOperator;
 import wyil.type.util.AbstractTypeFilter;
 import wyc.lang.WhileyFile;
@@ -107,13 +107,16 @@ import static wyc.util.ErrorMessages.*;
 public class FlowTypeCheck {
 	private final CompileTask builder;
 	private final NameResolver resolver;
-	private final SubtypeOperator subtypeOperator;
+	private final SubtypeOperator relaxedSubtypeOperator;
+	private final SubtypeOperator strictSubtypeOperator;
 
 	public FlowTypeCheck(CompileTask builder) {
 		this.builder = builder;
 		this.resolver = builder.getNameResolver();
-		this.subtypeOperator = new SubtypeOperator(resolver,
+		this.relaxedSubtypeOperator = new SubtypeOperator(resolver,
 				new RelaxedTypeEmptinessTest(resolver));
+		this.strictSubtypeOperator = new SubtypeOperator(resolver,
+				new StrictTypeEmptinessTest(resolver));
 	}
 
 	// =========================================================================
@@ -1138,13 +1141,16 @@ public class FlowTypeCheck {
 			SemanticType lhsT = checkExpression(expr.getOperand(), environment, Type.Any);
 			SemanticType rhsT = expr.getTestType();
 			// Sanity check operands for this type test
-			SemanticType trueBranchRefinementT = new Type.Intersection(lhsT, rhsT);
+			SemanticType trueBranchRefinementT = new SemanticType.Intersection(lhsT, rhsT);
 			SemanticType falseBranchRefinementT = new SemanticType.Difference(lhsT, rhsT);
 			//
-			if (subtypeOperator.isVoid(trueBranchRefinementT, environment)) {
+			// NOTE: it's a little unclear to me whether use the strict subtype operator
+			// here makes sense in the long run. However, using the relaxed subtype operator
+			// definitely results in problems!
+			if (strictSubtypeOperator.isVoid(trueBranchRefinementT, environment)) {
 				// DEFINITE TRUE CASE
 				syntaxError(errorMessage(BRANCH_ALWAYS_TAKEN), expr);
-			} else if (subtypeOperator.isVoid(falseBranchRefinementT, environment)) {
+			} else if (strictSubtypeOperator.isVoid(falseBranchRefinementT, environment)) {
 				// DEFINITE FALSE CASE
 				syntaxError(errorMessage(INCOMPARABLE_OPERANDS, lhsT, rhsT), expr);
 			}
@@ -1305,7 +1311,7 @@ public class FlowTypeCheck {
 		// SemanticType. Furthermore, since we know the result is an instanceof
 		// SemanticType.Array, it follows that it must be an instance of Type.Array (or
 		// null).
-		Type.Array arrT = (Type.Array) FlowTypeUtils.typeArrayExtractor(srcT, environment, subtypeOperator, resolver);
+		Type.Array arrT = (Type.Array) FlowTypeUtils.typeArrayExtractor(srcT, environment, relaxedSubtypeOperator, resolver);
 		if(arrT == null) {
 			return syntaxError("expected array type", lval);
 		} else {
@@ -1317,7 +1323,12 @@ public class FlowTypeCheck {
 
 	public Type checkRecordLVal(Expr.RecordAccess lval, Environment environment) {
 		Type src = checkLVal((LVal) lval.getOperand(), environment);
-		Type.Record recT = (Type.Record) FlowTypeUtils.typeRecordExtractor(src, environment, subtypeOperator, resolver);
+		// NOTE: the following cast is safe because, given a Type, we cannot extract a
+		// SemanticType. Furthermore, since we know the result is an instanceof
+		// SemanticType.Record, it follows that it must be an instance of Type.Record
+		// (or null).
+		Type.Record recT = (Type.Record) FlowTypeUtils.typeRecordExtractor(src, environment, relaxedSubtypeOperator,
+				resolver);
 		if (recT == null) {
 			return syntaxError("expected record type", lval);
 		} else {
@@ -1327,7 +1338,11 @@ public class FlowTypeCheck {
 
 	public Type checkDereferenceLVal(Expr.Dereference lval, Environment environment) {
 		Type srcT = checkLVal((LVal) lval.getOperand(), environment);
-		Type.Reference refT = (Type.Reference) FlowTypeUtils.typeReferenceExtractor(srcT, environment, subtypeOperator,
+		// NOTE: the following cast is safe because, given a Type, we cannot extract a
+		// SemanticType. Furthermore, since we know the result is an instance of
+		// SemanticType.Reference, it follows that it must be an instance of
+		// Type.Reference (or null).
+		Type.Reference refT = (Type.Reference) FlowTypeUtils.typeReferenceExtractor(srcT, environment, relaxedSubtypeOperator,
 				resolver);
 		if(refT == null) {
 			return syntaxError("expected reference type", lval);
@@ -1554,10 +1569,10 @@ public class FlowTypeCheck {
 			Type least = null;
 			for (int i = 0; i != expected.length; ++i) {
 				Type candidate = expected[i];
-				if (subtypeOperator.isSubtype(candidate, actual, environment)) {
-					if (least == null || subtypeOperator.isSubtype(least, candidate, environment)) {
+				if (relaxedSubtypeOperator.isSubtype(candidate, actual, environment)) {
+					if (least == null || relaxedSubtypeOperator.isSubtype(least, candidate, environment)) {
 						least = candidate;
-					} else if (subtypeOperator.isSubtype(candidate, least, environment)) {
+					} else if (relaxedSubtypeOperator.isSubtype(candidate, least, environment)) {
 						// ignore,
 					} else {
 						// Ambiguous coercion
@@ -1689,7 +1704,7 @@ public class FlowTypeCheck {
 		for (int i = 0; i != candidates.size(); ++i) {
 			Type.Callable candidate = candidates.get(i).getType();
 			Type parameter = candidate.getParameters().get(argument);
-			if (!subtypeOperator.isSubtype(parameter, actual, environment)) {
+			if (!relaxedSubtypeOperator.isSubtype(parameter, actual, environment)) {
 				// This candidate is no longer applicable for whatever reason, therefore remove
 				// it from the list being considered.
 				candidates.remove(i);
@@ -1800,7 +1815,7 @@ public class FlowTypeCheck {
 		// Check expression against expected record types
 		SemanticType src = checkExpression(expr.getOperand(), env, expectedRecords);
 		// NOTE: following safe because expression check ensures src has field
-		return FlowTypeUtils.typeRecordExtractor(src, env, subtypeOperator, resolver).getField(expr.getField());
+		return FlowTypeUtils.typeRecordExtractor(src, env, relaxedSubtypeOperator, resolver).getField(expr.getField());
 	}
 
 	private SemanticType checkRecordUpdate(Expr.RecordUpdate expr, Environment environment, Type... expected) {
@@ -1815,7 +1830,7 @@ public class FlowTypeCheck {
 		// Check src and value expressions
 		SemanticType src = checkExpression(expr.getFirstOperand(), environment, expected);
 		SemanticType val = checkExpression(expr.getSecondOperand(), environment, expectedFieldTypes);
-		SemanticType.Record readableRecordT = FlowTypeUtils.typeRecordExtractor(src, environment, subtypeOperator, resolver);
+		SemanticType.Record readableRecordT = FlowTypeUtils.typeRecordExtractor(src, environment, relaxedSubtypeOperator, resolver);
 		//
 		String actualFieldName = expr.getField().get();
 		Tuple<? extends SemanticType.Field> fields = readableRecordT.getFields();
@@ -1928,7 +1943,7 @@ public class FlowTypeCheck {
 		SemanticType sourceT = checkExpression(source, environment, expectedArrays);
 		SemanticType subscriptT = checkExpression(subscript, environment, Type.Int);
 		//
-		return FlowTypeUtils.typeArrayExtractor(sourceT, environment, subtypeOperator, resolver).getElement();
+		return FlowTypeUtils.typeArrayExtractor(sourceT, environment, relaxedSubtypeOperator, resolver).getElement();
 	}
 
 	private SemanticType checkArrayUpdate(Expr.ArrayUpdate expr, Environment environment, Type... expected) {
@@ -1948,7 +1963,7 @@ public class FlowTypeCheck {
 		checkExpression(subscript, environment, Type.Int);
 		checkExpression(value, environment, expectedElementTypes);
 		// Extract the determined array type
-		return FlowTypeUtils.typeArrayExtractor(sourceT, environment, subtypeOperator, resolver);
+		return FlowTypeUtils.typeArrayExtractor(sourceT, environment, relaxedSubtypeOperator, resolver);
 	}
 
 	private SemanticType checkDereference(Expr.Dereference expr, Environment environment, Type... expected) {
@@ -1965,7 +1980,7 @@ public class FlowTypeCheck {
 		SemanticType operandT = checkExpression(expr.getOperand(), environment, Type.Any);
 		// Extract an appropriate reference type form the source.
 		SemanticType.Reference readableReferenceT = FlowTypeUtils.typeReferenceExtractor(operandT, environment,
-				subtypeOperator, resolver);
+				relaxedSubtypeOperator, resolver);
 		// Since we ignored the expected types before, we must now check that we were
 		// able to successfully extract a reference type.
 		if(readableReferenceT == null) {
@@ -2470,7 +2485,7 @@ public class FlowTypeCheck {
 				// each argument is a subtype of its corresponding parameter.
 				for (int i = 0; i != args.size(); ++i) {
 					SemanticType param = parameters.get(i);
-					if (!subtypeOperator.isSubtype(param, args.get(i), lifetimes)) {
+					if (!relaxedSubtypeOperator.isSubtype(param, args.get(i), lifetimes)) {
 						return false;
 					}
 				}
@@ -2640,7 +2655,7 @@ public class FlowTypeCheck {
 			for (int i = 0; i != parentParams.size(); ++i) {
 				SemanticType parentParam = parentParams.get(i);
 				SemanticType childParam = childParams.get(i);
-				if (!subtypeOperator.isSubtype(parentParam, childParam, lifetimes)) {
+				if (!relaxedSubtypeOperator.isSubtype(parentParam, childParam, lifetimes)) {
 					return false;
 				}
 			}
@@ -2660,7 +2675,7 @@ public class FlowTypeCheck {
 		// to avoid conversion to SemanticType.
 		for(int i=0;i!=lhs.length;++i) {
 			try {
-				if (subtypeOperator.isSubtype(lhs[i], rhs, lifetimes)) {
+				if (relaxedSubtypeOperator.isSubtype(lhs[i], rhs, lifetimes)) {
 					return;
 				}
 			} catch (NameResolver.ResolutionError e) {
@@ -2679,7 +2694,7 @@ public class FlowTypeCheck {
 
 	private void checkIsSubtype(SemanticType lhs, SemanticType rhs, LifetimeRelation lifetimes, SyntacticItem element) {
 		try {
-			if (!subtypeOperator.isSubtype(lhs,rhs, lifetimes)) {
+			if (!relaxedSubtypeOperator.isSubtype(lhs,rhs, lifetimes)) {
 				syntaxError(errorMessage(SUBTYPE_ERROR, lhs, rhs), element);
 			}
 		} catch (NameResolver.ResolutionError e) {
@@ -2689,7 +2704,7 @@ public class FlowTypeCheck {
 
 	private void checkContractive(Decl.Type d) {
 		try {
-			if (!subtypeOperator.isContractive(d.getQualifiedName().toNameID(), d.getType())) {
+			if (!relaxedSubtypeOperator.isContractive(d.getQualifiedName().toNameID(), d.getType())) {
 				syntaxError("empty type encountered", d.getName());
 			}
 		} catch (NameResolver.ResolutionError e) {
@@ -2718,7 +2733,7 @@ public class FlowTypeCheck {
 	private void checkNonEmpty(Decl.Variable d, LifetimeRelation lifetimes) {
 		try {
 			// FIXME: conversion to semantic type seems unnecessary here?
-			if (subtypeOperator.isVoid(d.getType(), lifetimes)) {
+			if (relaxedSubtypeOperator.isVoid(d.getType(), lifetimes)) {
 				syntaxError("empty type encountered", d.getType());
 			}
 		} catch (NameResolver.ResolutionError e) {

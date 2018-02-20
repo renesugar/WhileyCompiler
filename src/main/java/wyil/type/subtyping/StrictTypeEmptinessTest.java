@@ -177,10 +177,10 @@ import static wyc.lang.WhileyFile.Name;
  * @author David J. Pearce
  *
  */
-public class SemanticTypeEmptinessTest implements EmptinessTest<SemanticType> {
+public class StrictTypeEmptinessTest implements EmptinessTest<SemanticType> {
 	protected final NameResolver resolver;
 
-	public SemanticTypeEmptinessTest(NameResolver resolver) {
+	public StrictTypeEmptinessTest(NameResolver resolver) {
 		this.resolver = resolver;
 	}
 

@@ -16,6 +16,7 @@ package wyil.type.util;
 import static wyc.lang.WhileyFile.*;
 
 import java.util.ArrayList;
+import java.util.function.BiFunction;
 
 import wybs.lang.NameResolver;
 import wyc.lang.WhileyFile.SemanticType;
@@ -61,9 +62,34 @@ public class TypeRecordExtractor extends AbstractTypeExtractor<SemanticType.Reco
 
 	@Override
 	protected SemanticType.Record union(SemanticType.Record lhs, SemanticType.Record rhs) {
-		ArrayList<SemanticType.Field> fields = new ArrayList<>();
 		Tuple<? extends SemanticType.Field> lhsFields = lhs.getFields();
 		Tuple<? extends SemanticType.Field> rhsFields = rhs.getFields();
+		// Determine the number of matching fields in the two records, as this is the
+		// critical factor in determining the outcome.
+		int count = countMatchingFields(lhsFields,rhsFields);
+		// Determine whether result is an open record or not. If either of the records
+		// is open, then the result is open. Likewise, the result is open if we
+		// "compact" two compatible records down into one.
+		boolean isOpenRecord = lhs.isOpen() || rhs.isOpen();
+		isOpenRecord |= (lhsFields.size() > count || rhsFields.size() > count);
+		//
+		if(lhs instanceof Type && rhs instanceof Type) {
+			// NOTE: this case is required to ensure that, when given two Types, the type
+			// extractor produces a Type (rather than a SemanticType).
+			Type.Field[] fields = new Type.Field[count];
+			extractMatchingFieldsUnioned(lhsFields,rhsFields,fields,true);
+			return new Type.Record(isOpenRecord, new Tuple<>(fields));
+		} else {
+			SemanticType.Field[] fields = new SemanticType.Field[count];
+			extractMatchingFieldsUnioned(lhsFields,rhsFields,fields,false);
+			return new SemanticType.Record(isOpenRecord, new Tuple<>(fields));
+		}
+	}
+
+	protected int extractMatchingFieldsUnioned(Tuple<? extends SemanticType.Field> lhsFields,
+			Tuple<? extends SemanticType.Field> rhsFields, SemanticType.Field[] result, boolean concrete) {
+		int index = 0;
+		// Extract all matching fields first.
 		for (int i = 0; i != lhsFields.size(); ++i) {
 			for (int j = 0; j != rhsFields.size(); ++j) {
 				SemanticType.Field lhsField = lhsFields.get(i);
@@ -72,21 +98,13 @@ public class TypeRecordExtractor extends AbstractTypeExtractor<SemanticType.Reco
 				Identifier rhsFieldName = rhsField.getName();
 				if (lhsFieldName.equals(rhsFieldName)) {
 					SemanticType type = unionHelper(lhsField.getType(), rhsField.getType());
-					fields.add(new SemanticType.Field(lhsFieldName, type));
+					SemanticType.Field combined = concrete ? new Type.Field(lhsFieldName, (Type) type)
+							: new SemanticType.Field(lhsFieldName, type);
+					result[index++] = combined;
 				}
 			}
 		}
-		//
-		boolean isOpenRecord = lhs.isOpen() || rhs.isOpen();
-		isOpenRecord |= (lhsFields.size() > fields.size() || rhsFields.size() > fields.size());
-		//
-		if(lhs instanceof Type && rhs instanceof Type) {
-			// NOTE: this case is required to ensure that, when given two Types, the type
-			// extractor produces a Type (rather than a SemanticType).
-			return new SemanticType.Record(isOpenRecord, new Tuple(fields));
-		} else {
-			return new SemanticType.Record(isOpenRecord, new Tuple<>(fields));
-		}
+		return index;
 	}
 
 	@Override
@@ -194,8 +212,8 @@ public class TypeRecordExtractor extends AbstractTypeExtractor<SemanticType.Reco
 	 * @param result
 	 * @return
 	 */
-	protected int extractMatchingFields(Tuple<? extends SemanticType.Field> lhsFields, Tuple<? extends SemanticType.Field> rhsFields,
-			SemanticType.Field[] result) {
+	protected int extractMatchingFields(Tuple<? extends SemanticType.Field> lhsFields,
+			Tuple<? extends SemanticType.Field> rhsFields, SemanticType.Field[] result) {
 		int index = 0;
 		// Extract all matching fields first.
 		for (int i = 0; i != lhsFields.size(); ++i) {

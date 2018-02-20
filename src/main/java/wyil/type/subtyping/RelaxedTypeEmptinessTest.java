@@ -41,12 +41,12 @@ import wyc.lang.WhileyFile.SemanticType;
  * layout and, hence, many more conversions between layouts are required.
  * </p>
  *
- * @see SemanticTypeEmptinessTest
+ * @see StrictTypeEmptinessTest
  *
  * @author David J. Pearce
  *
  */
-public class RelaxedTypeEmptinessTest extends SemanticTypeEmptinessTest {
+public class RelaxedTypeEmptinessTest extends StrictTypeEmptinessTest {
 
 	public RelaxedTypeEmptinessTest(NameResolver resolver) {
 		super(resolver);

@@ -24,7 +24,7 @@ import static wyc.lang.WhileyFile.Type;
 import wyc.util.TestUtils;
 import wyil.type.subtyping.RelaxedTypeEmptinessTest;
 import wyil.type.subtyping.SubtypeOperator;
-import wyil.type.subtyping.SemanticTypeEmptinessTest;
+import wyil.type.subtyping.StrictTypeEmptinessTest;
 
 public class ArraySubtypeTest {
 	@Test public void test_52() { checkIsSubtype("null","null"); }
