@@ -90,7 +90,13 @@ public abstract class AbstractTypeExtractor<T extends SemanticType> {
 	}
 
 	public T apply(SemanticType type, LifetimeRelation lifetimes) {
+		//
+		// First, convert type into conjunctive normal form. This allows all atom
+		// combinations to be tried and potentially reduced to void which, in turn,
+		// allows further simplifications.
 		Disjunct dnf = toDisjunctiveNormalForm(type);
+		// Now, convert from DNF back into a type whilst, hopefully, preserving the
+		// underlying form we are looking for (e.g. an array or record, etc).
 		return construct(dnf, lifetimes);
 	}
 

@@ -62,6 +62,7 @@ public class TypeRecordExtractor extends AbstractTypeExtractor<SemanticType.Reco
 
 	@Override
 	protected SemanticType.Record union(SemanticType.Record lhs, SemanticType.Record rhs) {
+		//
 		Tuple<? extends SemanticType.Field> lhsFields = lhs.getFields();
 		Tuple<? extends SemanticType.Field> rhsFields = rhs.getFields();
 		// Determine the number of matching fields in the two records, as this is the
@@ -109,7 +110,6 @@ public class TypeRecordExtractor extends AbstractTypeExtractor<SemanticType.Reco
 
 	@Override
 	protected Record intersect(SemanticType.Record lhs, SemanticType.Record rhs) {
-		//
 		Tuple<? extends SemanticType.Field> lhsFields = lhs.getFields();
 		Tuple<? extends SemanticType.Field> rhsFields = rhs.getFields();
 		// Determine the number of matching fields. That is, fields with the
@@ -149,6 +149,7 @@ public class TypeRecordExtractor extends AbstractTypeExtractor<SemanticType.Reco
 
 	@Override
 	protected Record subtract(SemanticType.Record lhs, SemanticType.Record rhs) {
+		//
 		ArrayList<SemanticType.Field> fields = new ArrayList<>();
 		Tuple<? extends SemanticType.Field> lhsFields = lhs.getFields();
 		Tuple<? extends SemanticType.Field> rhsFields = rhs.getFields();

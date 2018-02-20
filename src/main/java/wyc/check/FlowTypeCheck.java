@@ -1146,7 +1146,7 @@ public class FlowTypeCheck {
 			//
 			// NOTE: it's a little unclear to me whether use the strict subtype operator
 			// here makes sense in the long run. However, using the relaxed subtype operator
-			// definitely results in problems!
+			// definitely results in problems!  See #845
 			if (strictSubtypeOperator.isVoid(trueBranchRefinementT, environment)) {
 				// DEFINITE TRUE CASE
 				syntaxError(errorMessage(BRANCH_ALWAYS_TAKEN), expr);
@@ -1311,7 +1311,7 @@ public class FlowTypeCheck {
 		// SemanticType. Furthermore, since we know the result is an instanceof
 		// SemanticType.Array, it follows that it must be an instance of Type.Array (or
 		// null).
-		Type.Array arrT = (Type.Array) FlowTypeUtils.typeArrayExtractor(srcT, environment, relaxedSubtypeOperator, resolver);
+		Type.Array arrT = (Type.Array) FlowTypeUtils.typeArrayExtractor(srcT, environment, strictSubtypeOperator, resolver);
 		if(arrT == null) {
 			return syntaxError("expected array type", lval);
 		} else {
@@ -1327,7 +1327,7 @@ public class FlowTypeCheck {
 		// SemanticType. Furthermore, since we know the result is an instanceof
 		// SemanticType.Record, it follows that it must be an instance of Type.Record
 		// (or null).
-		Type.Record recT = (Type.Record) FlowTypeUtils.typeRecordExtractor(src, environment, relaxedSubtypeOperator,
+		Type.Record recT = (Type.Record) FlowTypeUtils.typeRecordExtractor(src, environment, strictSubtypeOperator,
 				resolver);
 		if (recT == null) {
 			return syntaxError("expected record type", lval);
@@ -1342,7 +1342,7 @@ public class FlowTypeCheck {
 		// SemanticType. Furthermore, since we know the result is an instance of
 		// SemanticType.Reference, it follows that it must be an instance of
 		// Type.Reference (or null).
-		Type.Reference refT = (Type.Reference) FlowTypeUtils.typeReferenceExtractor(srcT, environment, relaxedSubtypeOperator,
+		Type.Reference refT = (Type.Reference) FlowTypeUtils.typeReferenceExtractor(srcT, environment, strictSubtypeOperator,
 				resolver);
 		if(refT == null) {
 			return syntaxError("expected reference type", lval);
@@ -1815,7 +1815,7 @@ public class FlowTypeCheck {
 		// Check expression against expected record types
 		SemanticType src = checkExpression(expr.getOperand(), env, expectedRecords);
 		// NOTE: following safe because expression check ensures src has field
-		return FlowTypeUtils.typeRecordExtractor(src, env, relaxedSubtypeOperator, resolver).getField(expr.getField());
+		return FlowTypeUtils.typeRecordExtractor(src, env, strictSubtypeOperator, resolver).getField(expr.getField());
 	}
 
 	private SemanticType checkRecordUpdate(Expr.RecordUpdate expr, Environment environment, Type... expected) {
@@ -1830,7 +1830,7 @@ public class FlowTypeCheck {
 		// Check src and value expressions
 		SemanticType src = checkExpression(expr.getFirstOperand(), environment, expected);
 		SemanticType val = checkExpression(expr.getSecondOperand(), environment, expectedFieldTypes);
-		SemanticType.Record readableRecordT = FlowTypeUtils.typeRecordExtractor(src, environment, relaxedSubtypeOperator, resolver);
+		SemanticType.Record readableRecordT = FlowTypeUtils.typeRecordExtractor(src, environment, strictSubtypeOperator, resolver);
 		//
 		String actualFieldName = expr.getField().get();
 		Tuple<? extends SemanticType.Field> fields = readableRecordT.getFields();
@@ -1943,7 +1943,7 @@ public class FlowTypeCheck {
 		SemanticType sourceT = checkExpression(source, environment, expectedArrays);
 		SemanticType subscriptT = checkExpression(subscript, environment, Type.Int);
 		//
-		return FlowTypeUtils.typeArrayExtractor(sourceT, environment, relaxedSubtypeOperator, resolver).getElement();
+		return FlowTypeUtils.typeArrayExtractor(sourceT, environment, strictSubtypeOperator, resolver).getElement();
 	}
 
 	private SemanticType checkArrayUpdate(Expr.ArrayUpdate expr, Environment environment, Type... expected) {
@@ -1963,7 +1963,7 @@ public class FlowTypeCheck {
 		checkExpression(subscript, environment, Type.Int);
 		checkExpression(value, environment, expectedElementTypes);
 		// Extract the determined array type
-		return FlowTypeUtils.typeArrayExtractor(sourceT, environment, relaxedSubtypeOperator, resolver);
+		return FlowTypeUtils.typeArrayExtractor(sourceT, environment, strictSubtypeOperator, resolver);
 	}
 
 	private SemanticType checkDereference(Expr.Dereference expr, Environment environment, Type... expected) {
@@ -1980,7 +1980,7 @@ public class FlowTypeCheck {
 		SemanticType operandT = checkExpression(expr.getOperand(), environment, Type.Any);
 		// Extract an appropriate reference type form the source.
 		SemanticType.Reference readableReferenceT = FlowTypeUtils.typeReferenceExtractor(operandT, environment,
-				relaxedSubtypeOperator, resolver);
+				strictSubtypeOperator, resolver);
 		// Since we ignored the expected types before, we must now check that we were
 		// able to successfully extract a reference type.
 		if(readableReferenceT == null) {
