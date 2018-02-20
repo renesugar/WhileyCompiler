@@ -68,12 +68,12 @@ public class TypeArrayExtractor extends AbstractTypeExtractor<SemanticType.Array
 
 	@Override
 	protected SemanticType.Array intersect(SemanticType.Array lhs, SemanticType.Array rhs) {
-		return new SemanticType.Array(new SemanticType.Difference(lhs.getElement(),rhs.getElement()));
+		return new SemanticType.Array(intersectionHelper(lhs.getElement(), rhs.getElement()));
 	}
 
 	@Override
 	protected SemanticType.Array subtract(SemanticType.Array lhs, SemanticType.Array rhs) {
-		return new SemanticType.Array(intersectionHelper(lhs.getElement(), rhs.getElement()));
+		return new SemanticType.Array(new SemanticType.Difference(lhs.getElement(),rhs.getElement()));
 	}
 
 }
