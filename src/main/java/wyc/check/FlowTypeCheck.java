@@ -1581,7 +1581,6 @@ public class FlowTypeCheck {
 				}
 			}
 			if (least == null) {
-				System.out.println("GOT: " + Arrays.toString(expected) + " TO: " + actual);
 				return syntaxError("invalid coercion required", element);
 			} else {
 				return least;
